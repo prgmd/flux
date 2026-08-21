@@ -1,3 +1,35 @@
+# 명세, 학습 메모 (git 밖에서 관리)
 plan.md
 docs/check
+
+# Python
 venv
+.venv
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 환경변수
+.env
+.env.local
+
+# 데이터 (원본 덤프, Delta 테이블, 중간 산출물은 절대 커밋하지 않는다)
+data/
+dumps/
+warehouse/
+_checkpoints/
+spark-warehouse/
+*.tar
+*.tar.bz2
+*.tar.gz
+*.tar.zst
+*.zst
+*.bz2
+*.jsonl
+*.parquet
+
+# 로그
+logs/
+*.log
