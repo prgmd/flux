@@ -91,3 +91,46 @@ def test_서빙DB와_메타DB가_분리되어_있다():
     assert serving == "flux_serving"
     assert meta == "airflow"
     assert serving != meta
+
+
+AIRFLOW_CONTAINERS = [
+    "flux-airflow-scheduler",
+    "flux-airflow-apiserver",
+    "flux-airflow-dag-processor",
+    "flux-airflow-triggerer",
+]
+
+
+def test_모든_Airflow_컨테이너가_같은_JWT_서명키를_쓴다():
+    """서명 키가 갈리면 태스크가 실행 API 서버 인증에 실패한다.
+
+    실제로 겪은 실패다. 키를 지정하지 않으면 컨테이너마다 임의로 생성하고,
+    태스크는 'Invalid auth token: Signature verification failed'로 죽는다.
+    """
+    secrets = {}
+    for name in AIRFLOW_CONTAINERS:
+        out = _docker("exec", name, "airflow", "config", "get-value", "api_auth", "jwt_secret")
+        secrets[name] = [l for l in out.splitlines() if l.strip()][-1].strip()
+
+    assert len(set(secrets.values())) == 1, f"서명 키가 컨테이너마다 다르다: {secrets}"
+
+
+def test_DAG를_트리거하면_태스크가_실행된다():
+    """스케줄러가 실제로 태스크를 실행하는지 끝에서 끝까지 확인한다."""
+    import time
+
+    run_id = f"pytest-{int(time.time())}"
+    _docker("exec", "flux-airflow-scheduler",
+            "airflow", "dags", "trigger", "flux_stack_smoke", "--run-id", run_id)
+
+    deadline = time.time() + 180
+    states = ""
+    while time.time() < deadline:
+        states = _docker("exec", "flux-airflow-scheduler",
+                         "airflow", "tasks", "states-for-dag-run",
+                         "flux_stack_smoke", run_id)
+        if states.count("success") == 3 or "failed" in states:
+            break
+        time.sleep(5)
+
+    assert states.count("success") == 3, f"세 태스크가 모두 성공하지 않았다: {states}"
