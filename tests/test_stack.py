@@ -119,6 +119,10 @@ def test_DAG를_트리거하면_태스크가_실행된다():
     """스케줄러가 실제로 태스크를 실행하는지 끝에서 끝까지 확인한다."""
     import time
 
+    # 새로 만들어진 DAG는 기본이 일시정지다. 테스트가 수동 상태에 기대지 않도록 직접 푼다.
+    _docker("exec", "flux-airflow-scheduler",
+            "airflow", "dags", "unpause", "flux_stack_smoke")
+
     run_id = f"pytest-{int(time.time())}"
     _docker("exec", "flux-airflow-scheduler",
             "airflow", "dags", "trigger", "flux_stack_smoke", "--run-id", run_id)
