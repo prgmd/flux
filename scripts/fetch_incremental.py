@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from flux.common import config
-from flux.ingest import catalog, checksum, download
+from flux.ingest import catalog, checksum, download, manifest as manifest_mod
 from flux.ingest.catalog import DumpKind
 
 
@@ -45,8 +45,18 @@ def main() -> int:
     print(f"저장 위치      : {dest}")
     print(f"크기           : {size:,} 바이트" if size else "크기: 알 수 없음")
 
+    book = manifest_mod.Manifest(local_dir() / "dumps" / manifest_mod.MANIFEST_NAME)
+    if book.is_complete(dump.name, target.name):
+        entry = book.get(dump.name, target.name)
+        print()
+        print("이미 받아 둔 기록이 있다. 건너뛴다.")
+        print(f"  받은 시각: {entry.downloaded_at}")
+        for algorithm, digest in entry.checksums.items():
+            print(f"  {algorithm:6} {digest}")
+        return 0
+
     if dest.exists():
-        print("이미 받아 둔 파일이 있다. 다시 받지 않고 검증만 한다.")
+        print("파일은 있으나 기록이 없다. 검증만 하고 기록한다.")
     else:
         last = [0]
 
@@ -67,7 +77,10 @@ def main() -> int:
     for algorithm, digest in results.items():
         print(f"  {algorithm:6} {digest}  일치")
 
+    book.record(dump.name, target.name, dest, results)
+
     print(f"\n완료: {dest.stat().st_size:,} 바이트")
+    print(f"매니페스트: {book.path}  (총 {len(book)}건)")
     return 0
 
 
