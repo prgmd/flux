@@ -15,4 +15,9 @@ WORKDIR /opt/flux
 COPY requirements-spark.txt .
 RUN pip install --no-cache-dir -r requirements-spark.txt
 
+RUN ln -s "$(python -c 'import pyspark, os; print(os.path.dirname(pyspark.__file__))')" /opt/spark
+
+ENV SPARK_HOME=/opt/spark
+ENV PATH="${SPARK_HOME}/bin:${PATH}"
+
 CMD ["python", "-c", "import pyspark; print(pyspark.__version__)"]
