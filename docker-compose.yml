@@ -1,5 +1,26 @@
 name: flux
 
+x-airflow-common: &airflow-common
+  image: apache/airflow:3.1.0
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@postgres-airflow:5432/${AIRFLOW_DB_NAME:-airflow}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+
+
 services:
   spark-master:
     image: flux-spark
@@ -68,3 +89,128 @@ services:
       spark-master:
         condition: service_healthy
     command: ["python", "scripts/cluster_check.py"]
+
+  postgres-serving:
+    image: postgres:16
+    container_name: flux-postgres-serving
+    environment:
+      POSTGRES_USER: ${SERVING_DB_USER:-flux}
+      POSTGRES_PASSWORD: ${SERVING_DB_PASSWORD:-flux}
+      POSTGRES_DB: ${SERVING_DB_NAME:-flux_serving}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-serving-data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SERVING_DB_USER:-flux} -d ${SERVING_DB_NAME:-flux_serving}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  postgres-airflow:
+    image: postgres:16
+    container_name: flux-postgres-airflow
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:-airflow}
+    volumes:
+      - postgres-airflow-data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER:-airflow} -d ${AIRFLOW_DB_NAME:-airflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: flux-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create           --username "${AIRFLOW_ADMIN_USER:-admin}"           --password "${AIRFLOW_ADMIN_PASSWORD:-admin}"           --firstname flux --lastname admin --role Admin           --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" || true
+    restart: on-failure
+
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: flux-airflow-apiserver
+    command: api-server
+    ports:
+      - "8081:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: flux-airflow-scheduler
+    command: scheduler
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: flux-airflow-dag-processor
+    command: dag-processor
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: flux-airflow-triggerer
+    command: triggerer
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-serving-data:
+  postgres-airflow-data:
