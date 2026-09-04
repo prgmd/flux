@@ -1,0 +1,70 @@
+name: flux
+
+services:
+  spark-master:
+    image: flux-spark
+    build:
+      context: .
+      dockerfile: docker/spark.Dockerfile
+    container_name: flux-spark-master
+    command:
+      - spark-class
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+      - --port
+      - "7077"
+      - --webui-port
+      - "8080"
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket,sys; s=socket.create_connection(('spark-master',7077),2); s.close()\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  spark-worker:
+    image: flux-spark
+    build:
+      context: .
+      dockerfile: docker/spark.Dockerfile
+    command:
+      - spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+      - --cores
+      - "2"
+      - --memory
+      - 3g
+      - --webui-port
+      - "8081"
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 4g
+
+  spark-client:
+    image: flux-spark
+    build:
+      context: .
+      dockerfile: docker/spark.Dockerfile
+    profiles: ["tools"]
+    volumes:
+      - ./scripts:/opt/flux/scripts:ro
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    command: ["python", "scripts/cluster_check.py"]
