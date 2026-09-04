@@ -33,4 +33,5 @@ spark-warehouse/
 
 # 로그
 logs/
+airflow/logs/
 *.log
