@@ -19,6 +19,11 @@ from flux.ingest import mbdump_reader as reader
 DEFAULT_TABLES = ["artist", "recording", "release", "release_group", "artist_credit"]
 
 
+# 윈도우 콘솔 기본 인코딩(cp949)은 MusicBrainz의 다국어 이름을 출력하지 못한다.
+# 집계는 문제없는데 화면에 찍다가 죽는 것을 막는다.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def local_root() -> Path:
     root = config.storage_root()
     if not config.is_local():
