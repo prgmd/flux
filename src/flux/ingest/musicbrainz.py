@@ -7,6 +7,7 @@ ListenBrainz와 구조가 다르다.
 
 import re
 import urllib.request
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable
 
@@ -103,3 +104,47 @@ def list_files(
             )
         )
     return files
+
+
+def in_progress_releases(dumps_dir) -> list[str]:
+    """받다 만 조각이 남아 있는 릴리스 목록. 최신 순.
+
+    LATEST는 며칠에 한 번 교체된다. 여러 날에 걸치는 다운로드가
+    매번 LATEST를 다시 물어보면 새 디렉터리에 처음부터 받게 된다.
+    """
+    base = Path(dumps_dir)
+    if not base.is_dir():
+        return []
+    found = {
+        part.parent.name
+        for part in base.glob("*/*.part")
+        if part.stat().st_size > 0
+    }
+    return sorted(found, reverse=True)
+
+
+def resolve_release(
+    dumps_dir,
+    requested: str | None = None,
+    *,
+    fetch: Fetch = _http_get,
+    base: str = BASE_URL,
+) -> tuple[str, str | None]:
+    """받을 릴리스를 정한다. (릴리스, 경고문) 을 돌려준다.
+
+    - 명시적으로 지정하면 그대로 쓴다
+    - 받다 만 것이 있으면 그것을 이어받는다 (LATEST가 바뀌었어도)
+    - 없으면 LATEST를 따른다
+    """
+    if requested:
+        return requested, None
+
+    latest = latest_release(fetch=fetch, base=base)
+    pending = in_progress_releases(dumps_dir)
+    if pending and latest not in pending:
+        chosen = pending[0]
+        return chosen, (
+            f"받다 만 조각이 있어 {chosen}을 이어받는다. "
+            f"서버의 최신은 {latest}이다. 최신을 받으려면 --release {latest}를 준다."
+        )
+    return latest, None

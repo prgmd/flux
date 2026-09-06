@@ -124,3 +124,73 @@ def test_URL이_릴리스_아래로_만들어진다(fetch):
 def test_릴리스를_직접_지정할_수_있다(fetch):
     files = mb.list_files("20260829-002439", fetch=fetch)
     assert all("20260829-002439" in f.url for f in files)
+
+
+# ── 릴리스 고정 ─────────────────────────────────────────────
+
+NEWER = "20260905-002519"
+
+
+def make_part(root, release, name="mbdump.tar.bz2.part", size=1):
+    path = root / release / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+    return path
+
+
+def test_받다_만_것이_없으면_LATEST를_따른다(tmp_path, fetch):
+    chosen, warning = mb.resolve_release(tmp_path, fetch=fetch)
+    assert chosen == RELEASE
+    assert warning is None
+
+
+def test_받다_만_것이_있으면_그것을_이어받는다(tmp_path):
+    """LATEST가 교체돼도 진행 중인 것을 우선한다.
+
+    실제로 겪은 문제다. 릴리스가 회전하면서 1.22GB를 받아 둔 조각이 버려지고
+    새 디렉터리에 처음부터 받기 시작했다.
+    """
+    make_part(tmp_path, RELEASE)
+    chosen, warning = mb.resolve_release(
+        tmp_path, fetch=fake_fetch({"/LATEST": NEWER, "SHA256SUMS": SHA256SUMS})
+    )
+    assert chosen == RELEASE
+    assert warning and NEWER in warning
+
+
+def test_진행_중인_것이_최신이면_경고하지_않는다(tmp_path, fetch):
+    make_part(tmp_path, RELEASE)
+    chosen, warning = mb.resolve_release(tmp_path, fetch=fetch)
+    assert chosen == RELEASE
+    assert warning is None
+
+
+def test_명시하면_그대로_쓴다(tmp_path):
+    make_part(tmp_path, RELEASE)
+    chosen, warning = mb.resolve_release(
+        tmp_path, NEWER, fetch=lambda url: pytest.fail("서버를 부르면 안 된다")
+    )
+    assert chosen == NEWER
+    assert warning is None
+
+
+def test_빈_조각은_진행_중으로_보지_않는다(tmp_path, fetch):
+    make_part(tmp_path, RELEASE, size=0)
+    assert mb.in_progress_releases(tmp_path) == []
+
+
+def test_완성된_파일만_있으면_진행_중이_아니다(tmp_path):
+    path = tmp_path / RELEASE / "mbdump.tar.bz2"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"done")
+    assert mb.in_progress_releases(tmp_path) == []
+
+
+def test_여러_릴리스가_밀려_있으면_최신을_고른다(tmp_path):
+    make_part(tmp_path, "20260829-002439")
+    make_part(tmp_path, RELEASE)
+    assert mb.in_progress_releases(tmp_path)[0] == RELEASE
+
+
+def test_폴더가_없어도_안전하다(tmp_path):
+    assert mb.in_progress_releases(tmp_path / "없는폴더") == []

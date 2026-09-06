@@ -3,6 +3,7 @@
     FLUX_STORAGE_ROOT=... python scripts/fetch_musicbrainz.py
 """
 
+import argparse
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -20,11 +21,19 @@ def local_dir() -> Path:
 
 
 def main() -> int:
-    release = mb.latest_release()
-    print(f"최신 릴리스: {release}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--release", default=None,
+                        help="받을 릴리스를 직접 지정한다. 없으면 진행 중인 것이나 LATEST를 쓴다.")
+    args = parser.parse_args()
 
     root = local_dir()
-    dest_dir = root / "dumps" / "musicbrainz" / release
+    mb_dir = root / "dumps" / "musicbrainz"
+    release, warning = mb.resolve_release(mb_dir, args.release)
+    if warning:
+        print(f"주의: {warning}")
+    print(f"대상 릴리스: {release}")
+
+    dest_dir = mb_dir / release
     book = manifest_mod.Manifest(root / "dumps" / manifest_mod.MANIFEST_NAME)
 
     for target in mb.list_files(release):
