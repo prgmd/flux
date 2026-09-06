@@ -1,7 +1,7 @@
 import re
 import urllib.request
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Callable, Iterable
 
@@ -167,3 +167,27 @@ def find_file(files: Iterable[DumpFile], keyword: str) -> DumpFile:
         names = ", ".join(f.name for f in matches)
         raise CatalogError(f"'{keyword}'에 여러 파일이 걸린다: {names}")
     return matches[0]
+
+
+def recent_dumps(
+    dumps: Iterable[Dump],
+    days: int,
+    *,
+    anchor: date | None = None,
+) -> list[Dump]:
+    """최근 days일 창에 드는 덤프만 오래된 것부터 돌려준다.
+
+    창의 기준점은 오늘이 아니라 목록에서 날짜가 가장 늦은 덤프다.
+    일련번호로 정렬하면 안 된다. 번호는 서버가 붙이는 외부 식별자이고
+    날짜와 같은 순서라는 보장이 없다.
+    서버가 오늘치를 아직 올리지 않았을 때 오늘을 기준으로 잡으면
+    창이 한 칸 밀려 실제로 받을 수 있는 덤프 하나를 잃는다.
+    """
+    if days < 1:
+        raise ValueError("days는 1 이상이어야 한다")
+    ordered = sorted(dumps, key=lambda d: (d.dumped_at, d.serial))
+    if not ordered:
+        return []
+    end = anchor if anchor is not None else ordered[-1].dumped_on
+    start = end - timedelta(days=days - 1)
+    return [d for d in ordered if start <= d.dumped_on <= end]
