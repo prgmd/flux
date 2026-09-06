@@ -132,13 +132,13 @@ def test_출처를_모두_기록한다():
     row = build(json.dumps(SAMPLE), index=42)
     assert row._source_dump == DUMP
     assert row._source_file == FILE
-    assert row._record_index == 42
+    assert row._record_id == 42
 
 
 def test_격리된_행에도_출처가_남는다():
     rejected = build("{", index=7)
     assert rejected._source_dump == DUMP
-    assert rejected._record_index == 7
+    assert rejected._record_id == 7
 
 
 def test_파티션_값은_적재_날짜다():
@@ -170,7 +170,7 @@ def test_Kafka_컬럼은_스키마에_없다():
     names = schema.column_names()
     assert "_kafka_partition" not in names
     assert "_kafka_offset" not in names
-    assert "_source_file" in names and "_record_index" in names
+    assert "_source_file" in names and "_record_id" in names
 
 
 def test_DDL에_NOT_NULL이_반영된다():

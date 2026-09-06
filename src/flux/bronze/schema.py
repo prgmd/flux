@@ -24,12 +24,12 @@ class Column:
 
 # 명세 5.1을 따르되 Kafka 관련 두 컬럼은 대체했다.
 # MVP에서 Kafka가 빠졌으므로 `_kafka_partition`과 `_kafka_offset`은 채울 값이 없다.
-# 같은 목적(원본 위치 추적)을 파일 이름과 줄 번호로 달성한다.
+# 같은 목적(원본 위치 추적)을 파일 이름과 행 식별자로 달성한다.
 COLUMNS: tuple[Column, ...] = (
     Column("_ingested_at", "timestamp", False, "적재 시각"),
     Column("_source_dump", "string", False, "출처 덤프 식별자. 매니페스트 키와 같다"),
     Column("_source_file", "string", False, "덤프 안의 파일 이름"),
-    Column("_record_index", "long", False, "파일 안에서의 줄 번호. 0부터 센다"),
+    Column("_record_id", "long", False, "적재 안에서 유일한 식별자. 물리적 줄 번호가 아니다"),
     Column("listened_at", "long", True, "청취 시각. 파티션이 아니라 조회 편의용으로만 뽑는다"),
     Column("user_name", "string", True, "사용자 이름. 파생용으로만 뽑는다"),
     Column("raw_json", "string", False, "원본 문서 전체를 문자열 그대로"),
@@ -40,7 +40,7 @@ QUARANTINE_COLUMNS: tuple[Column, ...] = (
     Column("_ingested_at", "timestamp", False, "적재 시각"),
     Column("_source_dump", "string", False, "출처 덤프 식별자"),
     Column("_source_file", "string", False, "덤프 안의 파일 이름"),
-    Column("_record_index", "long", False, "파일 안에서의 줄 번호"),
+    Column("_record_id", "long", False, "적재 안에서 유일한 식별자"),
     Column("raw_line", "string", False, "해석하지 못한 원본 줄"),
     Column("error", "string", False, "실패 사유 한 줄"),
     Column(PARTITION_COLUMN, "date", False, "적재 날짜. 파티션 컬럼"),

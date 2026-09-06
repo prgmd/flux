@@ -18,7 +18,7 @@ class Row:
     _ingested_at: datetime
     _source_dump: str
     _source_file: str
-    _record_index: int
+    _record_id: int
     listened_at: int | None
     user_name: str | None
     raw_json: str
@@ -29,7 +29,7 @@ class Row:
             "_ingested_at": self._ingested_at,
             "_source_dump": self._source_dump,
             "_source_file": self._source_file,
-            "_record_index": self._record_index,
+            "_record_id": self._record_id,
             "listened_at": self.listened_at,
             "user_name": self.user_name,
             "raw_json": self.raw_json,
@@ -43,7 +43,7 @@ class Rejected:
     _ingested_at: datetime
     _source_dump: str
     _source_file: str
-    _record_index: int
+    _record_id: int
     raw_line: str
     error: str
     ingested_date: date
@@ -53,7 +53,7 @@ class Rejected:
             "_ingested_at": self._ingested_at,
             "_source_dump": self._source_dump,
             "_source_file": self._source_file,
-            "_record_index": self._record_index,
+            "_record_id": self._record_id,
             "raw_line": self.raw_line,
             "error": self.error,
             "ingested_date": self.ingested_date,
@@ -109,7 +109,7 @@ def build(
             _ingested_at=ingested_at,
             _source_dump=source_dump,
             _source_file=source_file,
-            _record_index=index,
+            _record_id=index,
             raw_line=text,
             error=reason[:MAX_ERROR_LEN],
             ingested_date=ingested_date,
@@ -131,7 +131,7 @@ def build(
         _ingested_at=ingested_at,
         _source_dump=source_dump,
         _source_file=source_file,
-        _record_index=index,
+        _record_id=index,
         listened_at=_as_int(parsed.get("listened_at", parsed.get("timestamp"))),
         user_name=_as_str(parsed.get("user_name")),
         raw_json=stripped,
