@@ -30,6 +30,11 @@ from flux.ingest.catalog import DumpKind
 IMAGE = "flux-spark"
 CONTAINER_ROOT = "/data"
 
+# Delta 의존 jar 87MB를 컨테이너가 뜰 때마다 다시 받는다. 30번이면 2.6GB이고
+# 그만큼 공개 저장소를 두들긴다. 캐시를 이름 있는 볼륨에 두면 첫 회만 받는다.
+IVY_VOLUME = "flux-ivy2"
+IVY_PATH = "/root/.ivy2"
+
 
 def local_dir() -> Path:
     root = config.storage_root()
@@ -52,10 +57,17 @@ def find_archives(root: Path, days: int) -> list[tuple[str, Path]]:
     return [(d.name, on_disk[d.name]) for d in wanted if d.kind is DumpKind.INCREMENTAL]
 
 
-def extract(step, python: str) -> None:
+def extract(step, python: str, repo: Path) -> None:
+    """꺼내기는 호스트에서 돈다. 경로는 모두 절대로 준다.
+
+    상대 경로는 부르는 쪽의 현재 디렉터리에 기대는데, 그 기대가 깨지면
+    "파일을 찾을 수 없다"는 말만 남고 무엇을 못 찾았는지는 안 남는다.
+    """
     subprocess.run(
-        [python, "scripts/extract_listens.py", "--dump", step.name],
+        [str(Path(python).resolve()), str(repo / "scripts" / "extract_listens.py"),
+         "--dump", step.name],
         check=True,
+        cwd=repo,
     )
 
 
@@ -67,6 +79,7 @@ def ingest(step, root: Path, repo: Path) -> None:
             "-v", f"{root}:{CONTAINER_ROOT}",
             "-v", f"{repo / 'scripts'}:/opt/flux/scripts:ro",
             "-v", f"{repo / 'src'}:/opt/flux/src:ro",
+            "-v", f"{IVY_VOLUME}:{IVY_PATH}",
             "-e", "PYTHONPATH=/opt/flux/src",
             IMAGE,
             "python", "scripts/bronze_ingest.py",
@@ -100,7 +113,7 @@ def main() -> int:
     for i, step in enumerate(steps, 1):
         mark = time.time()
         print(f"[{i}/{len(steps)}] {step.name}", flush=True)
-        extract(step, args.python)
+        extract(step, args.python, repo)
         ingest(step, root, repo)
         staged = backfill.directory_size(step.staging)
         if not args.keep_staging:
