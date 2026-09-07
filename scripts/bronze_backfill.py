@@ -33,7 +33,7 @@ CONTAINER_ROOT = "/data"
 # Delta 의존 jar 87MB를 컨테이너가 뜰 때마다 다시 받는다. 30번이면 2.6GB이고
 # 그만큼 공개 저장소를 두들긴다. 캐시를 이름 있는 볼륨에 두면 첫 회만 받는다.
 IVY_VOLUME = "flux-ivy2"
-IVY_PATH = "/root/.ivy2"
+IVY_PATH = "/opt/flux/ivy"
 
 
 def local_dir() -> Path:
@@ -92,6 +92,8 @@ def ingest(step, root: Path, repo: Path) -> None:
             "-v", f"{repo / 'scripts'}:/opt/flux/scripts:ro",
             "-v", f"{repo / 'src'}:/opt/flux/src:ro",
             "-v", f"{IVY_VOLUME}:{IVY_PATH}",
+            "-v", f"{repo / 'docker' / 'spark-conf'}:/opt/flux/sparkconf:ro",
+            "-e", "SPARK_CONF_DIR=/opt/flux/sparkconf",
             "-e", "PYTHONPATH=/opt/flux/src",
             IMAGE,
             "python", "scripts/bronze_ingest.py",
