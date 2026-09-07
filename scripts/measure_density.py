@@ -13,16 +13,8 @@ from collections import Counter
 from compression import zstd
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.common import config
-
-
-def local_root() -> Path:
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def find_dump(root: Path) -> Path:
@@ -103,7 +95,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None, help="이 개수만 읽고 멈춘다 (시험용)")
     args = parser.parse_args()
 
-    dump = find_dump(local_root())
+    dump = find_dump(config.local_root())
     print(f"덤프: {dump.name}")
     print(f"압축 크기: {dump.stat().st_size:,} 바이트\n")
 
@@ -151,7 +143,7 @@ def main() -> int:
         print(f"{key:34} {shown}")
     print("=" * 58)
 
-    out = local_root() / "measurements"
+    out = config.local_root() / "measurements"
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"density-{dump.name.split('-')[3]}.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

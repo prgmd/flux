@@ -12,18 +12,10 @@ import sys
 import tarfile
 from compression import zstd
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.common import config
 
 CHUNK = 8 * 1024 * 1024
-
-
-def local_root() -> Path:
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def find_dumps(root: Path) -> list[Path]:
@@ -71,7 +63,7 @@ def main() -> int:
     parser.add_argument("--dump", default=None, help="덤프 디렉터리 이름. 없으면 최신")
     args = parser.parse_args()
 
-    root = local_root()
+    root = config.local_root()
     dumps = find_dumps(root)
     if not dumps:
         raise SystemExit("증분 덤프를 찾지 못했다")

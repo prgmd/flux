@@ -9,7 +9,6 @@ import json
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.common import config
 from flux.ingest import mbdump_reader as reader
@@ -22,13 +21,6 @@ DEFAULT_TABLES = ["artist", "recording", "release", "release_group", "artist_cre
 # 윈도우 콘솔 기본 인코딩(cp949)은 MusicBrainz의 다국어 이름을 출력하지 못한다.
 # 집계는 문제없는데 화면에 찍다가 죽는 것을 막는다.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-
-def local_root() -> Path:
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def find_dump(root: Path) -> Path:
@@ -45,7 +37,7 @@ def main() -> int:
     parser.add_argument("--sample", type=int, default=1, help="테이블마다 앞의 N줄을 보여준다")
     args = parser.parse_args()
 
-    dump = find_dump(local_root())
+    dump = find_dump(config.local_root())
     print(f"덤프: {dump}")
     print(f"압축 크기: {dump.stat().st_size:,} 바이트\n")
 
@@ -82,7 +74,7 @@ def main() -> int:
         "elapsed_seconds": round(time.time() - started, 1),
         "tables": results,
     }
-    out = local_root() / "measurements"
+    out = config.local_root() / "measurements"
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"musicbrainz-{dump.parent.name}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

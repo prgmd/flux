@@ -6,20 +6,10 @@
 import argparse
 import sys
 import urllib.request
-from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.common import config
 from flux.ingest import catalog, checksum, download, manifest as manifest_mod
 from flux.ingest.catalog import DumpKind
-
-
-def local_dir() -> Path:
-    """저장 루트가 로컬일 때만 실제 경로로 바꾼다."""
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}. 지금은 file:// 만 지원한다.")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def fetch_text(url: str) -> str:
@@ -39,13 +29,13 @@ def main() -> int:
     target = catalog.find_file(catalog.list_files(dump), args.keyword)
     print(f"받을 파일      : {target.name}")
 
-    dest_dir = local_dir() / "dumps" / "listenbrainz" / "incremental" / dump.name
+    dest_dir = config.local_root() / "dumps" / "listenbrainz" / "incremental" / dump.name
     dest = dest_dir / target.name
     size = download.remote_size(target.url)
     print(f"저장 위치      : {dest}")
     print(f"크기           : {size:,} 바이트" if size else "크기: 알 수 없음")
 
-    book = manifest_mod.Manifest(local_dir() / "dumps" / manifest_mod.MANIFEST_NAME)
+    book = manifest_mod.Manifest(config.local_root() / "dumps" / manifest_mod.MANIFEST_NAME)
     if book.is_complete(dump.name, target.name):
         entry = book.get(dump.name, target.name)
         print()

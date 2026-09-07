@@ -20,7 +20,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.bronze import backfill
 from flux.common import config
@@ -34,13 +33,6 @@ CONTAINER_ROOT = "/data"
 # 그만큼 공개 저장소를 두들긴다. 캐시를 이름 있는 볼륨에 두면 첫 회만 받는다.
 IVY_VOLUME = "flux-ivy2"
 IVY_PATH = "/opt/flux/ivy"
-
-
-def local_dir() -> Path:
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def find_archives(root: Path, days: int) -> list[tuple[str, Path]]:
@@ -111,7 +103,7 @@ def main() -> int:
     parser.add_argument("--python", default=sys.executable)
     args = parser.parse_args()
 
-    root = local_dir()
+    root = config.local_root()
     repo = Path(__file__).resolve().parent.parent
     archives = find_archives(root, args.days)
     done = backfill.reconciled_dumps(root / "measurements")

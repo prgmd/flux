@@ -100,3 +100,43 @@ def test_환경변수를_바꾸면_즉시_반영된다(root):
     assert config.bronze("t") == "file:///data/flux/bronze/t"
     root("s3a://bucket/flux")
     assert config.bronze("t") == "s3a://bucket/flux/bronze/t"
+
+
+# ── 로컬 파일 경로로 되돌리기 ────────────────────────────────
+
+def test_유닉스_절대경로는_절대경로로_남는다(root):
+    """file:///data 에서 앞 슬래시를 떼면 상대 경로가 된다.
+
+    7개 스크립트에 복사돼 있던 구현이 이 경우에 틀렸다.
+    윈도우에서만 돌려 봐서 드러나지 않았다.
+    """
+    root("file:///data/flux")
+    assert config.local_root().as_posix() == "/data/flux"
+
+
+def test_윈도우_드라이브는_앞_슬래시를_뗀다(root):
+    root("file:///C:/Users/flux-data")
+    assert config.local_root().as_posix() == "C:/Users/flux-data"
+
+
+def test_드라이브_문자_하나만_있어도_뗀다(root):
+    root("file:///D:")
+    assert config.local_root().as_posix() == "D:"
+
+
+def test_드라이브처럼_생긴_폴더는_떼지_않는다(root):
+    """/data 는 드라이브가 아니다. 한 글자 폴더와 구분해야 한다."""
+    root("file:///d/flux")
+    assert config.local_root().as_posix() == "/d/flux"
+
+
+def test_로컬이_아니면_거부한다(root):
+    root("s3a://bucket/flux")
+    with pytest.raises(config.StorageConfigError):
+        config.local_root()
+
+
+def test_Spark_경로는_스킴을_유지한다(root):
+    """Spark에 넘기는 경로는 local_root가 아니라 bronze/silver/gold를 쓴다."""
+    root("s3a://bucket/flux")
+    assert config.bronze("raw_listens") == "s3a://bucket/flux/bronze/raw_listens"

@@ -5,19 +5,10 @@
 
 import argparse
 import sys
-from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.common import config
 from flux.ingest import checksum, download, manifest as manifest_mod
 from flux.ingest import musicbrainz as mb
-
-
-def local_dir() -> Path:
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def main() -> int:
@@ -26,7 +17,7 @@ def main() -> int:
                         help="받을 릴리스를 직접 지정한다. 없으면 진행 중인 것이나 LATEST를 쓴다.")
     args = parser.parse_args()
 
-    root = local_dir()
+    root = config.local_root()
     mb_dir = root / "dumps" / "musicbrainz"
     release, warning = mb.resolve_release(mb_dir, args.release)
     if warning:

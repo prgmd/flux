@@ -10,20 +10,12 @@ import argparse
 import sys
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flux.common import config
 from flux.ingest import catalog, checksum, download, manifest as manifest_mod
 from flux.ingest.catalog import DumpKind
 
 KEYWORD = "listens-dump"
-
-
-def local_dir() -> Path:
-    root = config.storage_root()
-    if not config.is_local():
-        raise SystemExit(f"로컬 경로가 아니다: {root}")
-    return Path(urlsplit(root).path.lstrip("/"))
 
 
 def fetch_text(url: str) -> str:
@@ -63,7 +55,7 @@ def main() -> int:
     parser.add_argument("--days", type=int, default=30, help="최근 며칠치까지 받을지")
     args = parser.parse_args()
 
-    root = local_dir()
+    root = config.local_root()
     available = catalog.list_dumps(DumpKind.INCREMENTAL)
     wanted = catalog.recent_dumps(available, args.days)
 
