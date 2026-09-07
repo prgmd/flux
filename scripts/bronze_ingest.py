@@ -1,6 +1,12 @@
 """스테이징의 jsonl을 Bronze Delta로 적재하고 원본과 대조한다.
 
 컨테이너 안에서 spark-submit 없이 직접 돌린다(로컬 모드).
+
+경로는 FLUX_STORAGE_ROOT에서 온다. Spark에 넘기는 경로는 config.bronze()가
+스킴을 유지한 채 만들고, 스테이징과 기록은 로컬 파일이므로 local_root()를 쓴다.
+직접 Path로 조립하면 안 된다. pathlib이 s3a:// 의 연속 슬래시를 접는다.
+
+    FLUX_STORAGE_ROOT=file:///data python scripts/bronze_ingest.py --dump <이름>
 """
 
 import argparse
@@ -8,15 +14,15 @@ import json
 import sys
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 
 from flux.bronze import ingest, merge, schema, verify
+from flux.common import config
 
-BRONZE_DIR = "bronze/raw_listens"
-QUARANTINE_DIR = "bronze/invalid_listens"
+BRONZE_TABLE = "raw_listens"
+QUARANTINE_TABLE = "invalid_listens"
 
 
 def make_session(shuffle_partitions: int):
@@ -35,19 +41,18 @@ def make_session(shuffle_partitions: int):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", required=True, help="데이터 루트 (컨테이너 안 경로)")
     parser.add_argument("--dump", required=True, help="덤프 식별자")
     parser.add_argument("--shuffle-partitions", type=int, default=32)
     args = parser.parse_args()
 
-    root = Path(args.root)
+    root = config.local_root()
     staging = root / "staging" / args.dump
     files = sorted(staging.glob("*.listens"))
     if not files:
         raise SystemExit(f"스테이징에 파일이 없다: {staging}")
 
-    bronze = str(root / BRONZE_DIR)
-    quarantine = str(root / QUARANTINE_DIR)
+    bronze = config.bronze(BRONZE_TABLE)
+    quarantine = config.bronze(QUARANTINE_TABLE)
     ingested_at = datetime.now(timezone.utc)
 
     print(f"덤프      : {args.dump}")

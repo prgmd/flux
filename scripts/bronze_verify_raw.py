@@ -16,7 +16,9 @@ from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-BRONZE_DIR = "bronze/raw_listens"
+from flux.common import config
+
+BRONZE_TABLE = "raw_listens"
 
 
 def make_session():
@@ -44,12 +46,11 @@ def sample_source_lines(path: Path, step: int) -> dict[str, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", required=True)
     parser.add_argument("--dump", required=True)
     parser.add_argument("--step", type=int, default=5000, help="원본에서 N줄마다 하나씩 표본")
     args = parser.parse_args()
 
-    root = Path(args.root)
+    root = config.local_root()
     staging = root / "staging" / args.dump
     files = sorted(staging.glob("*.listens"))
     if not files:
@@ -66,7 +67,7 @@ def main() -> int:
 
     spark = make_session()
     try:
-        bronze = spark.read.format("delta").load(str(root / BRONZE_DIR)) \
+        bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE)) \
                      .filter(F.col("_source_dump") == args.dump)
 
         keys = list(expected)

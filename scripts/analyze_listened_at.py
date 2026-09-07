@@ -7,19 +7,20 @@
 파티션은 읽을 때 안 읽어도 되는 것을 건너뛰려고 나눈다. 너무 잘게 나누면
 목록을 관리하는 비용이 읽기에서 아끼는 비용을 넘어선다.
 
-    docker run ... python scripts/analyze_listened_at.py --root /data
+    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \n        python scripts/analyze_listened_at.py
 """
 
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-BRONZE_DIR = "bronze/raw_listens"
+from flux.common import config
+
+BRONZE_TABLE = "raw_listens"
 
 # 파티션 하나가 이보다 작으면 나눈 값어치가 없다고 본다.
 # Parquet 권장 파일 크기가 128MB 안팎이고, 한 행이 대략 170바이트이므로
@@ -43,14 +44,13 @@ def make_session():
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", required=True)
     args = parser.parse_args()
 
-    root = Path(args.root)
+    root = config.local_root()
     spark = make_session()
     try:
         df = (
-            spark.read.format("delta").load(str(root / BRONZE_DIR))
+            spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
             .select("listened_at")
             .withColumn("ts", F.col("listened_at").cast("timestamp"))
             .withColumn("day", F.to_date("ts"))

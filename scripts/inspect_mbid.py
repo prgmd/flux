@@ -6,20 +6,21 @@
 같은 MBID라도 ListenBrainz가 해석해 붙인 값과 클라이언트가 그냥 제출한 값은
 신뢰도가 다르다. 그 구분이 성립하려면 두 자리가 실제로 갈려 있어야 한다.
 
-    docker run ... python scripts/inspect_mbid.py --root /data --sample 200000
+    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \n        python scripts/inspect_mbid.py --sample 200000
 """
 
 import argparse
 import json
 import sys
 from collections import Counter
-from pathlib import Path
 
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-BRONZE_DIR = "bronze/raw_listens"
+from flux.common import config
+
+BRONZE_TABLE = "raw_listens"
 
 
 def make_session():
@@ -49,14 +50,13 @@ def walk(node, prefix, keys):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", required=True)
     parser.add_argument("--sample", type=int, default=200_000)
     args = parser.parse_args()
 
-    root = Path(args.root)
+    root = config.local_root()
     spark = make_session()
     try:
-        bronze = spark.read.format("delta").load(str(root / BRONZE_DIR))
+        bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
         total = bronze.count()
 
         # MBID가 들어올 수 있는 자리를 전부 센다. 명세는 두 곳만 보지만

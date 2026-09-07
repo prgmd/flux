@@ -4,7 +4,7 @@
 디스크에 있는 것과 지금 읽히는 것이 다르다. 그 차이가 곧 시점 조회의 대가이고,
 VACUUM 보존 기간을 정하는 근거다.
 
-    docker run ... python scripts/bronze_stats.py --root /data
+    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \n        python scripts/bronze_stats.py
 """
 
 import argparse
@@ -16,8 +16,10 @@ from delta import DeltaTable, configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-BRONZE_DIR = "bronze/raw_listens"
-QUARANTINE_DIR = "bronze/invalid_listens"
+from flux.common import config
+
+BRONZE_TABLE = "raw_listens"
+QUARANTINE_TABLE = "invalid_listens"
 
 
 def make_session():
@@ -48,20 +50,20 @@ def gb(size: int) -> float:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", required=True)
     args = parser.parse_args()
 
-    root = Path(args.root)
-    bronze = root / BRONZE_DIR
+    root = config.local_root()
+    bronze_uri = config.bronze(BRONZE_TABLE)
+    bronze_dir = root / "bronze" / BRONZE_TABLE
     spark = make_session()
     try:
         # spark.sql의 `delta.\`경로\`` 문법은 카탈로그를 거치느라
         # 워크스테이션 경로 규칙에 걸린다. 경로로 직접 여는 API를 쓴다.
-        table = DeltaTable.forPath(spark, str(bronze))
+        table = DeltaTable.forPath(spark, bronze_uri)
         detail = table.detail().collect()[0]
         history = table.history().count()
 
-        df = spark.read.format("delta").load(str(bronze))
+        df = spark.read.format("delta").load(bronze_uri)
         rows = df.count()
         dumps = df.select("_source_dump").distinct().count()
         files = df.select("_source_file").distinct().count()
@@ -70,9 +72,9 @@ def main() -> int:
             F.max("listened_at").alias("newest"),
         ).collect()[0]
 
-        quarantine = spark.read.format("delta").load(str(root / QUARANTINE_DIR)).count()
+        quarantine = spark.read.format("delta").load(config.bronze(QUARANTINE_TABLE)).count()
 
-        disk_bytes, disk_files = on_disk(bronze)
+        disk_bytes, disk_files = on_disk(bronze_dir)
         active_bytes = detail["sizeInBytes"]
         active_files = detail["numFiles"]
         archives, _ = on_disk(root / "dumps" / "listenbrainz" / "incremental")

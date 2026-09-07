@@ -87,9 +87,12 @@ def ingest(step, root: Path, repo: Path) -> None:
             "-v", f"{repo / 'docker' / 'spark-conf'}:/opt/flux/sparkconf:ro",
             "-e", "SPARK_CONF_DIR=/opt/flux/sparkconf",
             "-e", "PYTHONPATH=/opt/flux/src",
+            # 컨테이너 안에서도 경로는 환경변수 하나에서 온다.
+            # --root로 넘기면 잡마다 경로를 조립하게 되고, 그러면 스킴이 망가진다.
+            "-e", f"FLUX_STORAGE_ROOT=file://{CONTAINER_ROOT}",
             IMAGE,
             "python", "scripts/bronze_ingest.py",
-            "--root", CONTAINER_ROOT, "--dump", step.name,
+            "--dump", step.name,
         ],
         check=True,
     )
