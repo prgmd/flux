@@ -95,3 +95,4 @@ def write(df: DataFrame, path: str, *, source_dump: str, mode: str = "overwrite"
         escaped = source_dump.replace("'", "''")
         writer = writer.option("replaceWhere", f"_source_dump = '{escaped}'")
     writer.save(path)
+

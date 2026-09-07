@@ -13,7 +13,7 @@ from pathlib import Path
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 
-from flux.bronze import ingest, schema, verify
+from flux.bronze import ingest, merge, schema, verify
 
 BRONZE_DIR = "bronze/raw_listens"
 QUARANTINE_DIR = "bronze/invalid_listens"
@@ -62,15 +62,18 @@ def main() -> int:
     spark = make_session(args.shuffle_partitions)
     started = time.time()
     try:
+        frames = []
         for f in files:
-            print(f"적재 중: {f.name}", flush=True)
-            df = ingest.build_dataframe(
+            print(f"읽는 중: {f.name}", flush=True)
+            frames.append(ingest.build_dataframe(
                 spark, str(f),
                 source_dump=args.dump, source_file=f.name, ingested_at=ingested_at,
-            )
-            valid, rejected = ingest.split(df)
-            ingest.write(valid, bronze, source_dump=args.dump)
-            ingest.write(rejected, quarantine, source_dump=args.dump)
+            ))
+
+        valid, rejected = ingest.split(merge.combine(frames))
+        print(f"적재 중: {len(frames)}개 파일을 한 번에", flush=True)
+        ingest.write(valid, bronze, source_dump=args.dump)
+        ingest.write(rejected, quarantine, source_dump=args.dump)
 
         elapsed = time.time() - started
         bronze_rows = verify.count_rows(spark, bronze, args.dump)
