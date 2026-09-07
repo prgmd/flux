@@ -6,7 +6,8 @@
 같은 MBID라도 ListenBrainz가 해석해 붙인 값과 클라이언트가 그냥 제출한 값은
 신뢰도가 다르다. 그 구분이 성립하려면 두 자리가 실제로 갈려 있어야 한다.
 
-    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \n        python scripts/inspect_mbid.py --sample 200000
+    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \
+        python scripts/inspect_mbid.py --sample 200000
 """
 
 import argparse

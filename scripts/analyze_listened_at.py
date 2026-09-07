@@ -7,7 +7,8 @@
 파티션은 읽을 때 안 읽어도 되는 것을 건너뛰려고 나눈다. 너무 잘게 나누면
 목록을 관리하는 비용이 읽기에서 아끼는 비용을 넘어선다.
 
-    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \n        python scripts/analyze_listened_at.py
+    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \
+        python scripts/analyze_listened_at.py
 """
 
 import argparse

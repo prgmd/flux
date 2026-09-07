@@ -4,7 +4,8 @@
 디스크에 있는 것과 지금 읽히는 것이 다르다. 그 차이가 곧 시점 조회의 대가이고,
 VACUUM 보존 기간을 정하는 근거다.
 
-    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \n        python scripts/bronze_stats.py
+    docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \
+        python scripts/bronze_stats.py
 """
 
 import argparse
