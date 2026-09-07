@@ -98,3 +98,25 @@ def test_단위를_읽기_좋게_바꾼다():
     assert backfill.format_bytes(512) == "512B"
     assert backfill.format_bytes(5 * 1024 ** 2) == "5MB"
     assert backfill.format_bytes(3 * 1024 ** 3) == "3.00GB"
+
+
+# ── 컨테이너 이름 ────────────────────────────────────────────
+
+def test_컨테이너_이름은_날짜로_구분된다():
+    """뒤에서 자르면 모든 덤프가 'remental'로 끝나 같은 이름이 된다."""
+    import sys
+    sys.path.insert(0, "scripts")
+    from bronze_backfill import container_tag
+
+    a = container_tag("listenbrainz-dump-2621-20260808-000003-incremental")
+    b = container_tag("listenbrainz-dump-2622-20260809-000002-incremental")
+    assert a == "20260808" and b == "20260809"
+    assert a != b
+
+
+def test_날짜가_없는_이름도_이름을_돌려준다():
+    import sys
+    sys.path.insert(0, "scripts")
+    from bronze_backfill import container_tag
+
+    assert container_tag("이상한-이름") != ""

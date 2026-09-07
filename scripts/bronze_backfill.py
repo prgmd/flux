@@ -71,11 +71,23 @@ def extract(step, python: str, repo: Path) -> None:
     )
 
 
+def container_tag(dump: str) -> str:
+    """덤프 이름에서 날짜 부분만 뽑아 컨테이너 이름에 쓴다.
+
+    뒤에서 잘라 내면 모든 덤프가 "remental"로 끝나 같은 이름이 된다.
+    이름이 겹치면 무엇이 도는 중인지 밖에서 알 수 없다.
+    """
+    for part in dump.split("-"):
+        if len(part) == 8 and part.isdigit():
+            return part
+    return dump[:12]
+
+
 def ingest(step, root: Path, repo: Path) -> None:
     subprocess.run(
         [
             "docker", "run", "--rm",
-            "--name", f"flux-backfill-{step.name[-8:]}",
+            "--name", f"flux-backfill-{container_tag(step.name)}",
             "-v", f"{root}:{CONTAINER_ROOT}",
             "-v", f"{repo / 'scripts'}:/opt/flux/scripts:ro",
             "-v", f"{repo / 'src'}:/opt/flux/src:ro",
