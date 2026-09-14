@@ -55,6 +55,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--keys", type=int, default=300, help="조사할 키 개수")
     parser.add_argument("--shuffle-partitions", type=int, default=200)
+    parser.add_argument("--seed", type=int, default=20260914,
+                        help="표본 추출 난수 씨앗. 고정해야 재현된다")
     args = parser.parse_args()
 
     spark = make_session(args.shuffle_partitions)
@@ -69,10 +71,15 @@ def main() -> int:
             F.md5(F.col("raw_json")).alias("digest"),
         )
 
+        # limit()만 쓰면 표본이 아니다. 먼저 끝난 셔플 파티션에서 앞의 N개를
+        # 집어오므로 키 해시가 가까운 몇 사용자에 몰린다. 실제로 그 편향 때문에
+        # "user_id가 73.5%에서 바뀐다"는 잘못된 결론이 나왔다(전수는 0.02%).
+        # 무작위로 섞은 뒤 잘라야 전체를 대표한다. seed를 고정해 재현 가능하게 둔다.
         differing = (
             keyed.groupBy(*KEY)
                  .agg(F.countDistinct("digest").alias("shapes"))
                  .filter(F.col("shapes") > 1)
+                 .orderBy(F.rand(args.seed))
                  .limit(args.keys)
                  .select(*KEY)
         )
@@ -122,7 +129,10 @@ def main() -> int:
                 examples.append((key, first, last))
 
         keys_seen = len(by_key)
+        distinct_users = len({k[0] for k in by_key})
         print(f"키 개수   : {keys_seen:,}")
+        print(f"사용자 수 : {distinct_users:,}  "
+              f"(키당 {keys_seen / distinct_users:.1f}개)")
         print()
         print("나중 덤프가 필드를 더 갖는가")
         for label, n in (("더 많다", later_richer), ("더 적다", later_poorer),
@@ -149,6 +159,8 @@ def main() -> int:
 
         payload = {
             "keys_inspected": keys_seen,
+            "distinct_users": distinct_users,
+            "seed": args.seed,
             "rows_inspected": len(rows),
             "later_richer": later_richer,
             "later_poorer": later_poorer,
