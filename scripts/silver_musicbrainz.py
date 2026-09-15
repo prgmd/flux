@@ -129,18 +129,20 @@ def main() -> int:
             print(f"  {name:14} {n:>10,}행")
 
         # 조회 표는 작으므로 브로드캐스트한다. 297만 행을 셔플하지 않는다.
+        # 결과 컬럼에 밑줄 접두어를 붙인다. artist에 gender, type, area가
+        # 숫자 FK로 이미 있어서, 같은 이름을 쓰면 조인 뒤 참조가 모호해진다.
         types = F.broadcast(
             artist_type.select(F.col("id").alias("_type_id"),
-                               F.col("name").alias("artist_type")))
+                               F.col("name").alias("_type_name")))
         genders = F.broadcast(
             gender.select(F.col("id").alias("_gender_id"),
-                          F.col("name").alias("gender")))
+                          F.col("name").alias("_gender_name")))
         areas = F.broadcast(
             area.select(F.col("id").alias("_area_id"),
-                        F.col("name").alias("area_name")))
+                        F.col("name").alias("_area_name")))
         countries = F.broadcast(
             iso.select(F.col("area").alias("_iso_area_id"),
-                       F.col("code").alias("country")))
+                       F.col("code").alias("_country_code")))
 
         resolved = (
             artist
@@ -155,10 +157,10 @@ def main() -> int:
                 F.col("gid").alias("artist_mbid"),
                 F.col("name"),
                 F.col("sort_name"),
-                F.col("country"),
-                F.col("area_name"),
-                F.col("artist_type").alias("type"),
-                F.col("gender"),
+                F.col("_country_code").alias("country"),
+                F.col("_area_name").alias("area_name"),
+                F.col("_type_name").alias("type"),
+                F.col("_gender_name").alias("gender"),
                 partial_date("begin_date").alias("begin_date"),
                 partial_date("end_date").alias("end_date"),
                 (F.col("ended") == F.lit("t")).alias("ended"),
