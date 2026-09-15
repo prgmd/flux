@@ -171,9 +171,3 @@ def test_Kafka_컬럼은_스키마에_없다():
     assert "_kafka_partition" not in names
     assert "_kafka_offset" not in names
     assert "_source_file" in names and "_record_id" in names
-
-
-def test_DDL에_NOT_NULL이_반영된다():
-    ddl = schema.ddl()
-    assert "raw_json string NOT NULL" in ddl
-    assert "listened_at long" in ddl and "listened_at long NOT NULL" not in ddl

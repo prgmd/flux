@@ -1,8 +1,7 @@
 """Bronze 계층 스키마 정의.
 
-pyspark를 최상단에서 import하지 않는다. 스키마를 선언과 변환으로 나눠,
-선언 부분은 Spark 없이도 읽고 검증할 수 있게 한다. Spark는 컨테이너 안에만
-설치되어 있으므로 호스트에서 도는 테스트가 여기에 묶이면 안 된다.
+컬럼을 한곳에 선언해 두고 적재 잡이 이름 목록만 가져다 쓴다.
+pyspark를 부르지 않으므로 Spark 없이도 읽고 검증할 수 있다.
 """
 
 from dataclasses import dataclass
@@ -46,47 +45,6 @@ QUARANTINE_COLUMNS: tuple[Column, ...] = (
     Column(PARTITION_COLUMN, "date", False, "적재 날짜. 파티션 컬럼"),
 )
 
-# 원본에서 뽑아 컬럼으로 올리는 값들. 나머지는 raw_json에만 남는다.
-DERIVED_FIELDS = ("listened_at", "user_name")
-
 
 def column_names(columns: tuple[Column, ...] = COLUMNS) -> list[str]:
     return [c.name for c in columns]
-
-
-def ddl(columns: tuple[Column, ...] = COLUMNS) -> str:
-    """Spark가 읽는 DDL 문자열. 타입 선언을 한곳에서만 관리하기 위한 것."""
-    parts = []
-    for c in columns:
-        suffix = "" if c.nullable else " NOT NULL"
-        parts.append(f"{c.name} {c.type}{suffix}")
-    return ", ".join(parts)
-
-
-SPARK_TYPES = ("string", "long", "int", "double", "boolean", "timestamp", "date")
-
-
-def to_spark_schema(columns: tuple[Column, ...] = COLUMNS):
-    """Spark 스키마 객체로 바꾼다. 이 함수만 pyspark를 필요로 한다.
-
-    DDL 문자열을 파싱하는 방법도 있지만 그쪽은 활성 SparkSession을 요구한다.
-    스키마를 만드는 데 세션이 필요하면 잡을 짜기 전에 세션부터 띄워야 한다.
-    타입을 직접 매핑하면 import만으로 끝난다.
-    """
-    from pyspark.sql import types as T
-
-    mapping = {
-        "string": T.StringType(),
-        "long": T.LongType(),
-        "int": T.IntegerType(),
-        "double": T.DoubleType(),
-        "boolean": T.BooleanType(),
-        "timestamp": T.TimestampType(),
-        "date": T.DateType(),
-    }
-    fields = []
-    for c in columns:
-        if c.type not in mapping:
-            raise ValueError(f"모르는 타입: {c.type} ({c.name})")
-        fields.append(T.StructField(c.name, mapping[c.type], nullable=c.nullable))
-    return T.StructType(fields)
