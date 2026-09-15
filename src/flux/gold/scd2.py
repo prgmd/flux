@@ -120,3 +120,18 @@ def stage(current: dict, incoming: dict) -> list:
             staged.append((key, row))
             staged.append((None, row))
     return staged
+
+
+def covers(version: Version, at: str) -> bool:
+    """이 이력 줄이 `at` 시점을 덮는가. 시점 조인의 판단이다.
+
+    구간은 **시작은 포함하고 끝은 제외한다** (`[valid_from, valid_to)`).
+    양끝을 다 포함하면 앞 줄이 닫힌 시각과 뒤 줄이 열린 시각이 같으므로
+    **그 한 시점만 두 줄이 다 걸린다.** 아티스트 하나가 이름을 두 개 갖게 되고,
+    집계가 그 시각에만 두 배가 된다. 찾기 어려운 종류의 버그다.
+
+    Spark 쪽 조인도 같은 부등호를 써야 한다.
+
+        f.listened_at >= d.valid_from AND f.listened_at < d.valid_to
+    """
+    return version.valid_from <= at < version.valid_to
