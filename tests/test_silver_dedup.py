@@ -145,24 +145,6 @@ def test_여덟_줄까지_처리한다():
     assert dedup.pick(rows).record_id == 1
 
 
-# ── 지워지는 줄 ─────────────────────────────────────────────
-
-def test_남긴_것_말고_전부_지워진다():
-    rows = [c(1), c(2), c(3)]
-    assert [d.record_id for d in dedup.dropped(rows)] == [2, 3]
-
-
-def test_후보가_하나면_지워지는_것이_없다():
-    assert dedup.dropped([c(1)]) == []
-
-
-def test_지워지는_줄도_입력_순서에_안_흔들린다():
-    rows = [c(7), c(3), c(5)]
-    answers = {tuple(sorted(d.record_id for d in dedup.dropped(list(order))))
-               for order in itertools.permutations(rows)}
-    assert answers == {(5, 7)}
-
-
 # ── Spark 쪽과 어긋나지 않게 ─────────────────────────────────
 
 def test_정렬_명세가_순수_구현과_같은_순서다():

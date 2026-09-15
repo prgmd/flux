@@ -1,6 +1,6 @@
 """silver.mb_artist를 gold.dim_artist로 병합하고 불변식을 확인한다.
 
-처음이면 통째로 만들고, 있으면 2단계 MERGE로 이력을 쌓는다.
+처음이면 통째로 만들고, 있으면 MERGE 한 문장으로 이력을 쌓는다.
 
     docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \
         python scripts/gold_dim_artist.py

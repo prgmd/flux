@@ -85,13 +85,3 @@ def pick(candidates):
     rows.sort(key=lambda c: len(c.artist_mbids), reverse=True)
     rows.sort(key=lambda c: source_rank(c.mbid_source))
     return rows[0]
-
-
-def dropped(candidates):
-    """지워질 줄들. 품질 지표로 남기려고 따로 돌려준다.
-
-    무엇을 지웠는지 세어 두지 않으면 나중에 "합쳤어야 했나"를 판단할 근거가 없다.
-    """
-    rows = list(candidates)
-    kept = pick(rows)
-    return [c for c in rows if c is not kept]
