@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from pathlib import Path
@@ -119,3 +120,23 @@ def local_root() -> Path:
     if _DRIVE_PREFIX.match(raw):
         raw = raw[1:]
     return Path(raw)
+
+
+MEASUREMENTS = "measurements"
+
+
+def write_measurement(name: str, payload: dict) -> Path:
+    """측정 결과를 데이터 루트의 measurements/에 남긴다.
+
+    같은 다섯 줄이 열일곱 스크립트에 복사돼 있었다. 저장 위치나 형식을 바꾸려면
+    열일곱 곳을 고쳐야 했고, 그중 하나를 빠뜨리면 그 기록만 다른 자리에 남는다.
+
+    한글이 그대로 보이도록 ensure_ascii를 끈다. 나중에 사람이 열어 볼 파일이다.
+    """
+    directory = local_root() / MEASUREMENTS
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{name}.json"
+    target.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return target
