@@ -21,7 +21,6 @@ class Step:
     """덤프 하나를 처리하는 한 걸음."""
 
     name: str
-    archive: Path
     staging: Path
 
 
@@ -56,17 +55,18 @@ def reconciled_dumps(measurements_dir) -> set[str]:
 def plan(archives, staging_root, *, done=()) -> list[Step]:
     """받아 둔 덤프 아카이브에서 아직 적재하지 않은 것만 걸음으로 만든다.
 
-    archives는 (덤프 이름, tar 경로) 쌍이다. 이름은 덤프 디렉터리 이름이고
+    archives는 (덤프 이름, tar 경로) 쌍이다. 경로는 꺼내기가 알아서 찾으므로
+    걸음에 담지 않는다. 이름은 덤프 디렉터리 이름이고
     적재의 `_source_dump`와 같아야 한다. 두 곳에서 다른 이름을 쓰면
     멱등 교체가 엉뚱한 구획을 지운다.
     """
     finished = set(done)
     root = Path(staging_root)
     steps = []
-    for name, archive in archives:
+    for name, _archive in archives:
         if name in finished:
             continue
-        steps.append(Step(name=name, archive=Path(archive), staging=root / name))
+        steps.append(Step(name=name, staging=root / name))
     return steps
 
 
