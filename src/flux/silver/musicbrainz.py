@@ -8,6 +8,9 @@
 한곳에 모으고, 읽는 쪽에서 컬럼 개수를 확인한다.
 
 pyspark를 부르지 않는다. 컬럼 순서와 값 해석은 Spark가 필요 없는 판단이다.
+
+날짜 조립과 boolean 해석은 Spark 잡이 자기 식으로 하고 있어 여기서 뺐다.
+두 벌로 두면 갈라지고, 안 쓰이는 쪽은 갈라진 줄도 모른다.
 """
 
 NULL = "\\N"
@@ -68,36 +71,3 @@ def parse_row(table: str, line: str) -> dict:
         raise ColumnCountError(
             f"{table}: 컬럼 {len(fields)}개, 선언은 {len(names)}개")
     return {name: unnull(value) for name, value in zip(names, fields)}
-
-
-def _as_int(value):
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def partial_date(year, month, day):
-    """있는 만큼만의 날짜 문자열. 없으면 None.
-
-    MusicBrainz는 연도만 아는 경우가 흔하다. 그때 1월 1일로 채우면
-    **없던 정밀도를 지어내는 것**이 되고, 나중에 "1월생이 유난히 많다"는
-    가짜 패턴이 나온다.
-
-    있는 만큼만 적는다. `1969`, `1969-05`, `1969-05-03`.
-    """
-    y, m, d = _as_int(year), _as_int(month), _as_int(day)
-    if y is None:
-        return None
-    if m is None:
-        return f"{y:04d}"
-    if d is None:
-        return f"{y:04d}-{m:02d}"
-    return f"{y:04d}-{m:02d}-{d:02d}"
-
-
-def is_true(value) -> bool:
-    """PostgreSQL의 boolean 표기. `t`가 참이고 나머지는 거짓."""
-    return value == "t"

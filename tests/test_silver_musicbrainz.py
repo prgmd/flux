@@ -4,6 +4,9 @@
 결과만 조용히 틀리므로, 선언과 개수 검사를 테스트로 못 박는다.
 
 표본은 실제 덤프에서 본 줄을 그대로 쓴다.
+
+날짜 조립과 boolean 해석은 Spark 잡이 자기 식으로 하므로 여기 없다.
+쓰이지 않는 구현을 테스트하면 통과해도 아무것도 지켜 주지 않는다.
 """
 
 import pytest
@@ -104,55 +107,3 @@ def test_unnull은_NULL만_바꾼다():
     assert mb.unnull("") == ""
     assert mb.unnull("N") == "N"
     assert mb.unnull("값") == "값"
-
-
-# ── 부분 날짜 ───────────────────────────────────────────────
-
-def test_연도만_있으면_연도만_적는다():
-    """1월 1일로 채우면 없던 정밀도를 지어내는 것이다."""
-    assert mb.partial_date("1969", None, None) == "1969"
-
-
-def test_연월까지_있으면_거기까지():
-    assert mb.partial_date("1969", "5", None) == "1969-05"
-
-
-def test_전부_있으면_온전한_날짜():
-    assert mb.partial_date("1969", "5", "3") == "1969-05-03"
-
-
-def test_한_자리_수를_두_자리로_맞춘다():
-    assert mb.partial_date("805", "1", "2") == "0805-01-02"
-
-
-def test_연도가_없으면_None이다():
-    assert mb.partial_date(None, "5", "3") is None
-
-
-def test_월이_없으면_일이_있어도_버린다():
-    """연월일 순서가 끊기면 그 뒤는 쓸 수 없다."""
-    assert mb.partial_date("1969", None, "3") == "1969"
-
-
-@pytest.mark.parametrize("bad", ["", "어제", "N/A", [], {}])
-def test_숫자가_아닌_연도는_없는_것이다(bad):
-    assert mb.partial_date(bad, None, None) is None
-
-
-def test_숫자가_아닌_월은_연도까지만():
-    assert mb.partial_date("1969", "봄", None) == "1969"
-
-
-def test_정수로_줘도_받는다():
-    assert mb.partial_date(1969, 5, 3) == "1969-05-03"
-
-
-# ── boolean ────────────────────────────────────────────────
-
-def test_t만_참이다():
-    assert mb.is_true("t") is True
-
-
-@pytest.mark.parametrize("value", ["f", "", None, "true", "T", "1"])
-def test_나머지는_거짓이다(value):
-    assert mb.is_true(value) is False
