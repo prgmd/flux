@@ -8,30 +8,15 @@ Bronze만 들여다봐서는 그것이 원본과 같은지 알 수 없다.
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
-
-
-def make_session():
-    builder = (
-        SparkSession.builder.appName("flux-bronze-verify-raw")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "4g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def sample_source_lines(path: Path, step: int) -> dict[str, int]:
@@ -65,7 +50,7 @@ def main() -> int:
         print(f"  {f.name}: {len(picked):,}개 표본")
         expected.update(picked)
 
-    spark = make_session()
+    spark = spark_session("flux-bronze-verify-raw", memory="4g")
     try:
         bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE)) \
                      .filter(F.col("_source_dump") == args.dump)
@@ -100,11 +85,7 @@ def main() -> int:
             "matched": len(found),
             "bronze_rows": total,
         }
-        out = root / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / f"bronze-raw-verify-{args.dump}.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement(f"bronze-raw-verify-{args.dump}", payload)
         return 0
     finally:
         spark.stop()

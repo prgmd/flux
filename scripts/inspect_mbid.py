@@ -15,27 +15,12 @@ import json
 import sys
 from collections import Counter
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
-
-
-def make_session():
-    builder = (
-        SparkSession.builder.appName("flux-inspect-mbid")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "6g")
-        .config("spark.sql.shuffle.partitions", "64")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def walk(node, prefix, keys):
@@ -55,7 +40,7 @@ def main() -> int:
     args = parser.parse_args()
 
     root = config.local_root()
-    spark = make_session()
+    spark = spark_session("flux-inspect-mbid", memory="6g")
     try:
         bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
         total = bronze.count()
@@ -185,11 +170,7 @@ def main() -> int:
             "sample_size": len(sample),
             "mapping_keys": dict(mapping_keys.most_common(40)),
         }
-        out = root / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "mbid-shape.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("mbid-shape", payload)
         return 0
     finally:
         spark.stop()

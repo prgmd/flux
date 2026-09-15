@@ -21,14 +21,12 @@
 """
 
 import argparse
-import json
 import sys
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
 
@@ -56,20 +54,6 @@ MBID_FIELDS = {
 EPOCH_1970 = 0
 
 
-def make_session(shuffle_partitions: int):
-    builder = (
-        SparkSession.builder.appName("flux-quality-rules")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "8g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--shuffle-partitions", type=int, default=100)
@@ -77,7 +61,7 @@ def main() -> int:
                         help="형식 위반 값을 몇 개까지 보여줄지")
     args = parser.parse_args()
 
-    spark = make_session(args.shuffle_partitions)
+    spark = spark_session("flux-quality-rules", shuffle_partitions=args.shuffle_partitions)
     try:
         bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
 
@@ -202,11 +186,7 @@ def main() -> int:
             "rule_4_mbid": mbid_stats,
             "rule_4_malformed_samples": samples,
         }
-        out = config.local_root() / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "quality-rules.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("quality-rules", payload)
         return 0
     finally:
         spark.stop()

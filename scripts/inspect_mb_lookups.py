@@ -9,7 +9,6 @@ country와 type을 값으로 갖는데, 그러려면 이 표들을 함께 실어
 """
 
 import argparse
-import json
 import sys
 from collections import Counter
 
@@ -79,11 +78,7 @@ def main() -> int:
             "sample": stats.sample[:5],
         }
 
-    out = root / "measurements"
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "mb-lookup-shape.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    config.write_measurement("mb-lookup-shape", payload)
     return 0
 
 

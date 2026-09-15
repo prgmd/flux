@@ -9,31 +9,17 @@ VACUUM 보존 기간을 정하는 근거다.
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-from delta import DeltaTable, configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
+from delta import DeltaTable
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
 QUARANTINE_TABLE = "invalid_listens"
-
-
-def make_session():
-    builder = (
-        SparkSession.builder.appName("flux-bronze-stats")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "4g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def on_disk(path: Path) -> tuple[int, int]:
@@ -56,7 +42,7 @@ def main() -> int:
     root = config.local_root()
     bronze_uri = config.bronze(BRONZE_TABLE)
     bronze_dir = root / "bronze" / BRONZE_TABLE
-    spark = make_session()
+    spark = spark_session("flux-bronze-stats", memory="4g")
     try:
         # spark.sql의 `delta.\`경로\`` 문법은 카탈로그를 거치느라
         # 워크스테이션 경로 규칙에 걸린다. 경로로 직접 여는 API를 쓴다.
@@ -109,11 +95,7 @@ def main() -> int:
         print(f"하루당 활성   : {gb(active_bytes / dumps)}GB")
         print(f"원본 대비     : {active_bytes / archives:.2f}배")
 
-        out = root / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "bronze-stats.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("bronze-stats", payload)
         return 0
     finally:
         spark.stop()

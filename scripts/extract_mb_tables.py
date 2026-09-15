@@ -11,7 +11,6 @@ flux.silver.musicbrainz의 선언에서 가져온다.
 """
 
 import argparse
-import json
 import sys
 import tarfile
 import time
@@ -90,11 +89,7 @@ def main() -> int:
         "elapsed_seconds": round(time.time() - started, 1),
         "tables": written,
     }
-    out = root / "measurements"
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "mb-extract.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    config.write_measurement("mb-extract", payload)
     return 0
 
 

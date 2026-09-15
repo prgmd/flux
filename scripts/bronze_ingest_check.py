@@ -11,10 +11,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
+from flux.common.spark import session as spark_session
 from flux.bronze import ingest, schema
 
 AT = datetime(2026, 9, 6, 12, 0, 0, tzinfo=timezone.utc)
@@ -30,19 +29,6 @@ GOOD = [
      "track_metadata": {"additional_info": {"tags": ["a", "b"]}}},
 ]
 BAD = ['{"broken": ', "", "   ", "[1,2,3]", "not json"]
-
-
-def make_session():
-    builder = (
-        SparkSession.builder.appName("flux-bronze-check")
-        .master("local[2]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.ui.enabled", "false")
-        .config("spark.sql.shuffle.partitions", "4")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def write_sample(directory: Path) -> list[str]:
@@ -75,7 +61,7 @@ def main() -> int:
             failures.append(label)
 
     try:
-        spark = make_session()
+        spark = spark_session("flux-bronze-check")
         source_lines = write_sample(workdir)
         bronze = str(workdir / "bronze")
         quarantine = str(workdir / "quarantine")

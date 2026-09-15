@@ -8,33 +8,17 @@ Bronze 적재와 달리 **전체를 다시 만든다.** 중복 제거가 덤프�
 """
 
 import argparse
-import json
 import sys
 import time
 from datetime import datetime, timezone
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 from flux.silver import build, schema
 
 BRONZE_TABLE = "raw_listens"
-
-
-def make_session(shuffle_partitions: int, memory: str):
-    builder = (
-        SparkSession.builder.appName("flux-silver-build")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", memory)
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def main() -> int:
@@ -48,7 +32,7 @@ def main() -> int:
     quarantine_path = config.silver(schema.QUARANTINE_TABLE_NAME)
     built_at = datetime.now(timezone.utc)
 
-    spark = make_session(args.shuffle_partitions, args.driver_memory)
+    spark = spark_session("flux-silver-build", shuffle_partitions=args.shuffle_partitions, memory=args.driver_memory)
     started = time.time()
     try:
         silver, rejected = build.build(spark, bronze_path, built_at=built_at)
@@ -113,11 +97,7 @@ def main() -> int:
             "unknown_client_rows": unknown,
             "partitions": months,
         }
-        out = config.local_root() / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "silver-build.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("silver-build", payload)
 
         if removed < 0:
             print()

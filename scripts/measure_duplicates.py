@@ -14,30 +14,14 @@ cache()를 쓰지 않는다. 1억 5571만 행을 메모리에 올리려다 한 �
 """
 
 import argparse
-import json
 import sys
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
-
-
-def make_session(shuffle_partitions: int):
-    builder = (
-        SparkSession.builder.appName("flux-measure-duplicates")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "8g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def main() -> int:
@@ -45,7 +29,7 @@ def main() -> int:
     parser.add_argument("--shuffle-partitions", type=int, default=200)
     args = parser.parse_args()
 
-    spark = make_session(args.shuffle_partitions)
+    spark = spark_session("flux-measure-duplicates", shuffle_partitions=args.shuffle_partitions)
     try:
         bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
 
@@ -121,11 +105,7 @@ def main() -> int:
             "cross_dump_duplicate_keys": summary["cross_dump_keys"],
             "same_dump_duplicate_keys": summary["same_dump_keys"],
         }
-        out = config.local_root() / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "duplicates.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("duplicates", payload)
         return 0
     finally:
         spark.stop()

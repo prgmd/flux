@@ -16,35 +16,19 @@ iso_3166_1에 직접 걸리는 것만 country로 인정한다.
 """
 
 import argparse
-import json
 import sys
 import time
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 from flux.silver import musicbrainz as mb
 
 STAGING = "staging/musicbrainz"
 TABLE_NAME = "mb_artist"
 NULL = "\\N"
-
-
-def make_session(shuffle_partitions: int):
-    builder = (
-        SparkSession.builder.appName("flux-silver-musicbrainz")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "6g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def read_table(spark, directory, table):
@@ -109,7 +93,7 @@ def main() -> int:
     print(f"입력   : {directory}")
     print()
 
-    spark = make_session(args.shuffle_partitions)
+    spark = spark_session("flux-silver-musicbrainz", shuffle_partitions=args.shuffle_partitions, memory="6g")
     started = time.time()
     try:
         artist = read_table(spark, directory, "artist")
@@ -225,11 +209,7 @@ def main() -> int:
                         "begin_date", "end_date", "ended_true")},
             "area_not_country": area_not_country,
         }
-        out = root / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "mb-artist-load.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("mb-artist-load", payload)
 
         print()
         print("대조 통과")

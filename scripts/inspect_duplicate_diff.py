@@ -12,28 +12,13 @@ import json
 import sys
 from collections import Counter, defaultdict
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
 KEY = ["user_name", "listened_at", "msid"]
-
-
-def make_session(shuffle_partitions: int):
-    builder = (
-        SparkSession.builder.appName("flux-duplicate-diff")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "8g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def flatten(node, prefix=""):
@@ -59,7 +44,7 @@ def main() -> int:
                         help="표본 추출 난수 씨앗. 고정해야 재현된다")
     args = parser.parse_args()
 
-    spark = make_session(args.shuffle_partitions)
+    spark = spark_session("flux-duplicate-diff", shuffle_partitions=args.shuffle_partitions)
     try:
         bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
         keyed = bronze.select(
@@ -169,11 +154,7 @@ def main() -> int:
             "removed_fields": dict(removed_fields.most_common(40)),
             "changed_fields": dict(changed_fields.most_common(40)),
         }
-        out = config.local_root() / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "duplicate-diff.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("duplicate-diff", payload)
         return 0
     finally:
         spark.stop()

@@ -143,10 +143,7 @@ def main() -> int:
         print(f"{key:34} {shown}")
     print("=" * 58)
 
-    out = config.local_root() / "measurements"
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"density-{dump.name.split('-')[3]}.json"
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = config.write_measurement(f"density-{dump.name.split('-')[3]}", result)
     print(f"\n기록: {path}")
     return 0
 

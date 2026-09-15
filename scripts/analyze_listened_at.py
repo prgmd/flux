@@ -12,14 +12,12 @@
 """
 
 import argparse
-import json
 import sys
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
 
@@ -29,26 +27,12 @@ BRONZE_TABLE = "raw_listens"
 TINY_ROWS = 100_000
 
 
-def make_session():
-    builder = (
-        SparkSession.builder.appName("flux-listened-at")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "4g")
-        .config("spark.sql.shuffle.partitions", "64")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
 
     root = config.local_root()
-    spark = make_session()
+    spark = spark_session("flux-listened-at", memory="4g")
     try:
         df = (
             spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
@@ -151,11 +135,7 @@ def main() -> int:
             "by_year": {str(r["year"]): r["count"] for r in by_year},
             "top_months": {r["month"]: r["count"] for r in top_months},
         }
-        out = root / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "listened-at-distribution.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement("listened-at-distribution", payload)
         return 0
     finally:
         spark.stop()

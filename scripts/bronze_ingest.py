@@ -10,33 +10,17 @@
 """
 
 import argparse
-import json
 import sys
 import time
 from datetime import datetime, timezone
 
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession
 
 from flux.bronze import ingest, merge, schema, verify
 from flux.common import config
+from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
 QUARANTINE_TABLE = "invalid_listens"
-
-
-def make_session(shuffle_partitions: int):
-    builder = (
-        SparkSession.builder.appName("flux-bronze-ingest")
-        .master("local[*]")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.memory", "4g")
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def main() -> int:
@@ -64,7 +48,7 @@ def main() -> int:
         print(f"  {f.name:24} {n:>12,}줄  {f.stat().st_size / 1024**3:.2f}GB")
     print(f"원본 합계 : {source_lines:,}줄\n")
 
-    spark = make_session(args.shuffle_partitions)
+    spark = spark_session("flux-bronze-ingest", shuffle_partitions=args.shuffle_partitions, memory="4g")
     started = time.time()
     try:
         frames = []
@@ -99,11 +83,7 @@ def main() -> int:
             "reconciled": result.ok,
             "quarantine_ratio": result.quarantine_ratio,
         }
-        out = root / "measurements"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / f"bronze-{args.dump}.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        config.write_measurement(f"bronze-{args.dump}", payload)
 
         if not result.ok:
             print("\n대조 실패")

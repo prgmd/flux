@@ -15,7 +15,6 @@
 """
 
 import argparse
-import json
 import sys
 from collections import Counter
 
@@ -125,11 +124,7 @@ def main() -> int:
         "null_counts_by_index": {str(k): v for k, v in nulls.items()},
         "sample": stats.sample[:5],
     }
-    out = root / "measurements"
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "mb-artist-shape.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    config.write_measurement("mb-artist-shape", payload)
     return 0
 
 
