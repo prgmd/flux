@@ -160,3 +160,67 @@ def test_유효_구간이_겹치지_않는다():
     opened = scd2.open_new(MBID, ("B",), at=LATER)
     assert closed.valid_to == opened.valid_from
     assert closed.valid_from < closed.valid_to
+
+
+# ── MERGE 한 문장으로 만드는 것 ─────────────────────────────
+
+OTHER = "83d91898-7763-47d7-b03b-b92132375c47"
+
+
+def staged_keys(staged):
+    return [key for key, _ in staged]
+
+
+def test_바뀐_아티스트는_두_줄로_나간다():
+    """한 줄은 옛 줄을 닫으러, 한 줄은 새 줄을 열러 간다.
+
+    MERGE는 대상 한 행을 한 번만 건드리므로, 두 가지 일을 시키려면
+    원본 쪽을 두 줄로 부풀리는 수밖에 없다.
+    """
+    staged = scd2.stage({MBID: row(name="Prince")}, {MBID: row(name="TAFKAP")})
+    assert staged_keys(staged) == [MBID, None]
+
+
+def test_닫는_줄과_여는_줄이_같은_값을_싣는다():
+    """닫는 쪽도 새 값을 싣지만 MERGE가 유효 구간만 고치므로 값은 안 쓰인다."""
+    staged = scd2.stage({MBID: row(name="Prince")}, {MBID: row(name="TAFKAP")})
+    assert staged[0][1] == staged[1][1]
+
+
+def test_처음_보는_아티스트는_한_줄이고_키가_없다():
+    """키가 None이면 대상과 만나지 않는다. 그래서 그냥 삽입된다."""
+    staged = scd2.stage({}, {MBID: row()})
+    assert staged_keys(staged) == [None]
+
+
+def test_안_바뀐_아티스트는_아무것도_안_보낸다():
+    """이게 깨지면 실행할 때마다 이력이 297만 줄씩 늘어난다."""
+    assert scd2.stage({MBID: row()}, {MBID: row()}) == []
+
+
+def test_추적하지_않는_컬럼만_바뀌면_안_보낸다():
+    assert scd2.stage({MBID: row()}, {MBID: row(country="GB")}) == []
+
+
+def test_사라진_아티스트는_건드리지_않는다():
+    """원본에서 빠졌다고 이력을 닫지 않는다. 릴리스 누락과 실제 삭제를
+    구분할 수 없어서, 닫으면 멀쩡한 아티스트가 조용히 사라진다."""
+    assert scd2.stage({MBID: row()}, {}) == []
+
+
+def test_섞여_있어도_각자_규칙대로_나간다():
+    staged = scd2.stage(
+        {MBID: row(name="Prince")},
+        {MBID: row(name="TAFKAP"), OTHER: row(name="새 아티스트")},
+    )
+    assert staged_keys(staged) == [MBID, None, None]
+
+
+def test_여는_줄은_정확히_하나씩이다():
+    """키 없는 줄이 곧 새로 열리는 줄이다. 키마다 하나여야 현재 줄이
+    둘이 되지 않는다."""
+    staged = scd2.stage(
+        {MBID: row(name="Prince")},
+        {MBID: row(name="TAFKAP"), OTHER: row(name="새 아티스트")},
+    )
+    assert staged_keys(staged).count(None) == 2

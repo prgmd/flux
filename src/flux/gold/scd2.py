@@ -94,3 +94,29 @@ def open_new(key: str, values: tuple, *, at: str) -> Version:
     """새 이력 줄을 연다. 닫히지 않은 상태로 시작한다."""
     return Version(key=key, values=values, valid_from=at,
                    valid_to=FAR_FUTURE, is_current=True)
+
+
+# MERGE 한 문장으로 닫고 열기 위해 원본을 부풀릴 때 쓰는 가짜 키 이름.
+MERGE_KEY = "_merge_key"
+
+
+def stage(current: dict, incoming: dict) -> list:
+    """MERGE에 넘길 줄을 만든다. 무엇을 몇 줄로 보낼지가 여기서 정해진다.
+
+    `current`는 지금 열려 있는 줄, `incoming`은 이번에 들어온 줄이다. 둘 다
+    자연키를 열쇠로 갖는 사전이다.
+
+    돌려주는 것은 `(merge_key, row)` 목록이다. `merge_key`가 자연키면 대상과
+    만나 **옛 줄을 닫고**, None이면 아무와도 못 만나 **새 줄로 들어간다.**
+    그래서 값이 바뀐 아티스트는 두 줄로 나간다 — 하나는 닫으러, 하나는 열러.
+
+    한 대상 행을 한 번만 건드리는 MERGE로 두 가지 일을 시키는 방법이다.
+    """
+    staged = []
+    for key, row in incoming.items():
+        if key not in current:
+            staged.append((None, row))
+        elif changed(current[key], row):
+            staged.append((key, row))
+            staged.append((None, row))
+    return staged

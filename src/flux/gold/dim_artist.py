@@ -1,12 +1,11 @@
 """silver.mb_artist를 gold.dim_artist로 옮기며 이력을 쌓는다.
 
-명세 5.4의 2단계 MERGE다. 한 번에 못 하는 이유가 있다.
+SCD2는 두 가지 일을 한다 — 바뀐 아티스트의 **옛 줄을 닫고**, 새 값으로
+**새 줄을 연다**. Delta의 MERGE는 대상 한 줄을 한 번만 건드리므로 두 일을
+한 조건으로 쓸 수 없다.
 
-    1단계  값이 바뀐 아티스트의 **현재 줄을 닫는다**
-    2단계  새 아티스트와 바뀐 아티스트의 **새 줄을 연다**
-
-Delta의 MERGE는 한 대상 행을 한 번만 건드린다. 같은 실행에서 옛 줄을 닫고
-새 줄을 넣으려면 두 번 나눠야 한다.
+두 문장으로 나누면 그 사이에서 죽었을 때 반쪽이 남는다. 그래서 **원본을
+부풀려 한 문장으로** 처리한다. 방법은 _staged에 있다.
 
 pyspark를 부르므로 호스트에서 읽히지 않는다. 판단은 flux.gold.scd2에 있다.
 """
@@ -31,20 +30,6 @@ COLUMNS = (
 )
 
 
-def _changed_condition(target: str, source: str):
-    """추적 컬럼 중 하나라도 다른가.
-
-    eqNullSafe를 쓴다. SQL에서 NULL != NULL은 참이 아니라 NULL이라
-    그냥 `!=`로 쓰면 이름이 없는 아티스트의 비교가 통째로 NULL이 되고,
-    MERGE 조건이 거짓처럼 취급되어 변경을 놓친다.
-    """
-    condition = None
-    for name in scd2.TRACKED_COLUMNS:
-        differs = ~F.col(f"{target}.{name}").eqNullSafe(F.col(f"{source}.{name}"))
-        condition = differs if condition is None else (condition | differs)
-    return condition
-
-
 def prepare(silver: DataFrame, *, at: str, release: str) -> DataFrame:
     """Silver 행을 차원 한 줄의 모양으로 맞춘다. 아직 이력은 없다."""
     return (
@@ -63,51 +48,72 @@ def create(prepared: DataFrame, path: str) -> None:
         .option("overwriteSchema", "true").save(path)
 
 
-def close_changed(spark: SparkSession, path: str, prepared: DataFrame,
-                  *, at: str) -> None:
-    """1단계. 값이 바뀐 아티스트의 현재 줄을 닫는다.
+def _staged(spark: SparkSession, path: str, prepared: DataFrame) -> DataFrame:
+    """MERGE 한 번으로 닫고 열기 위해 원본을 두 줄로 부풀린다.
 
-    값은 건드리지 않는다. 유효 구간의 끝과 현재 표시만 바꾼다.
+    Delta의 MERGE는 **대상 한 줄을 한 번만** 건드린다. 그래서 같은 아티스트의
+    옛 줄을 닫으면서 새 줄을 넣는 것을 한 조건으로 쓸 수 없다.
+
+    바뀐 아티스트를 두 줄로 만들어 넘기면 된다.
+
+        _merge_key = artist_mbid  →  대상과 만나 옛 줄을 닫는다
+        _merge_key = NULL         →  아무와도 안 만나 새 줄로 들어간다
+
+    NULL은 어떤 값과도 같지 않으므로 반드시 "안 만남"이 된다. SQL의 그 성질을
+    여기서는 **일부러** 쓴다. 다른 데서는 함정이었던 것이 여기서는 도구다.
+
+    같은 규칙을 호스트에서 검증할 수 있는 형태로 적은 것이 scd2.stage다.
+    여기는 그것을 Spark 컬럼 연산으로 옮긴 것이다.
     """
-    table = DeltaTable.forPath(spark, path)
-    (
-        table.alias("t")
-        .merge(prepared.alias("s"),
-               f"t.{scd2.BUSINESS_KEY} = s.{scd2.BUSINESS_KEY} "
-               f"AND t.{scd2.IS_CURRENT} = true")
-        .whenMatchedUpdate(
-            condition=_changed_condition("t", "s"),
-            set={scd2.VALID_TO: F.lit(at), scd2.IS_CURRENT: F.lit(False)},
+    current = (
+        spark.read.format("delta").load(path)
+        .filter(F.col(scd2.IS_CURRENT))
+        .select(
+            F.col(scd2.BUSINESS_KEY).alias("_k"),
+            *[F.col(name).alias(f"_cur_{name}") for name in scd2.TRACKED_COLUMNS],
         )
-        .execute()
     )
 
+    marked = prepared.join(F.broadcast(current),
+                           F.col(scd2.BUSINESS_KEY) == F.col("_k"), "left")
+    differs = None
+    for name in scd2.TRACKED_COLUMNS:
+        one = ~F.col(name).eqNullSafe(F.col(f"_cur_{name}"))
+        differs = one if differs is None else (differs | one)
 
-def open_new(spark: SparkSession, path: str, prepared: DataFrame) -> None:
-    """2단계. 현재 줄이 없는 아티스트의 새 줄을 연다.
+    changed_rows = marked.filter(F.col("_k").isNotNull() & differs).select(*COLUMNS)
+    new_rows = marked.filter(F.col("_k").isNull()).select(*COLUMNS)
 
-    1단계에서 닫힌 아티스트는 현재 줄이 사라졌으므로 여기서 다시 걸린다.
-    한 번도 본 적 없는 아티스트도 같은 경로로 들어온다. **신규와 변경을
-    따로 다루지 않아도 되는 것**이 2단계 분리의 이점이다.
-    """
-    table = DeltaTable.forPath(spark, path)
-    (
-        table.alias("t")
-        .merge(prepared.alias("s"),
-               f"t.{scd2.BUSINESS_KEY} = s.{scd2.BUSINESS_KEY} "
-               f"AND t.{scd2.IS_CURRENT} = true")
-        .whenNotMatchedInsertAll()
-        .execute()
-    )
+    # 바뀐 아티스트는 두 번 보낸다. 한 번은 닫으러, 한 번은 열러.
+    to_close = changed_rows.withColumn(scd2.MERGE_KEY, F.col(scd2.BUSINESS_KEY))
+    to_open = changed_rows.withColumn(scd2.MERGE_KEY, F.lit(None).cast("string"))
+    brand_new = new_rows.withColumn(scd2.MERGE_KEY, F.lit(None).cast("string"))
+
+    return to_close.unionByName(to_open).unionByName(brand_new)
 
 
 def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str) -> None:
-    """두 단계를 순서대로 실행한다. 순서를 바꾸면 안 된다.
+    """닫기와 열기를 **한 번의 MERGE**로 처리한다.
 
-    새 줄을 먼저 열면 그 줄이 현재 줄이 되어 1단계가 방금 넣은 줄을 닫는다.
+    두 문장으로 나누면 그 사이에서 죽었을 때 옛 줄은 닫혔는데 새 줄이 없는
+    상태가 남는다. 실제로 강제 종료 실험에서 그 상태를 만들었다
+    (docs/measurements/2026-09-15-dim-artist-scd2.md).
+
+    Delta의 ACID는 **문장 하나**를 지킨다. 잡 전체를 지키려면 문장이 하나여야 한다.
     """
-    close_changed(spark, path, prepared, at=at)
-    open_new(spark, path, prepared)
+    staged = _staged(spark, path, prepared)
+    table = DeltaTable.forPath(spark, path)
+    (
+        table.alias("t")
+        .merge(staged.alias("s"),
+               f"t.{scd2.BUSINESS_KEY} = s.{scd2.MERGE_KEY} "
+               f"AND t.{scd2.IS_CURRENT} = true")
+        .whenMatchedUpdate(
+            set={scd2.VALID_TO: F.lit(at), scd2.IS_CURRENT: F.lit(False)})
+        .whenNotMatchedInsert(
+            values={name: F.col(f"s.{name}") for name in COLUMNS})
+        .execute()
+    )
 
 
 def invariants(spark: SparkSession, path: str) -> dict:
