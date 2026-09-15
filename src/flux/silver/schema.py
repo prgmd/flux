@@ -1,7 +1,7 @@
 """Silver 계층 스키마 정의.
 
-Bronze와 같은 방식으로 선언과 변환을 나눈다. 선언은 Spark 없이 읽고 검증할 수 있고,
-to_spark_schema만 pyspark를 필요로 한다.
+컬럼을 한곳에 선언해 두고 적재 잡이 이름 목록만 가져다 쓴다.
+pyspark를 부르지 않으므로 Spark 없이도 읽고 검증할 수 있다.
 
 명세 5.2는 `silver.listens_normalized`가 "MBID 해석 규칙 적용 결과"라고만 하고
 컬럼을 나열하지 않는다. 여기서 정한다. 기준은 둘이다.
@@ -77,14 +77,6 @@ def column_names(columns: tuple[Column, ...] = COLUMNS) -> list[str]:
     return [c.name for c in columns]
 
 
-def ddl(columns: tuple[Column, ...] = COLUMNS) -> str:
-    parts = []
-    for c in columns:
-        suffix = "" if c.nullable else " NOT NULL"
-        parts.append(f"{c.name} {c.type}{suffix}")
-    return ", ".join(parts)
-
-
 SPARK_TYPES = (
     "string", "long", "int", "double", "boolean",
     "timestamp", "date", "array<string>",
@@ -94,31 +86,8 @@ SPARK_TYPES = (
 def validate_types(columns: tuple[Column, ...] = COLUMNS) -> None:
     """타입 이름이 아는 것인지 확인한다. pyspark 없이 돈다.
 
-    선언을 Spark 없이 검증할 수 있어야 나눈 의미가 있다. 이 검사가
-    to_spark_schema 안에만 있으면 컨테이너 안에서만 돌아 늦게 드러난다.
+    타입 이름이 틀리면 적재가 컨테이너 안에서야 죽는다. 선언만으로 미리 걸러 둔다.
     """
     for c in columns:
         if c.type not in SPARK_TYPES:
             raise ValueError(f"모르는 타입: {c.type} ({c.name})")
-
-
-def to_spark_schema(columns: tuple[Column, ...] = COLUMNS):
-    """Spark 스키마 객체로 바꾼다. 이 함수만 pyspark를 필요로 한다."""
-    validate_types(columns)
-
-    from pyspark.sql import types as T
-
-    mapping = {
-        "string": T.StringType(),
-        "long": T.LongType(),
-        "int": T.IntegerType(),
-        "double": T.DoubleType(),
-        "boolean": T.BooleanType(),
-        "timestamp": T.TimestampType(),
-        "date": T.DateType(),
-        "array<string>": T.ArrayType(T.StringType()),
-    }
-    fields = []
-    for c in columns:
-        fields.append(T.StructField(c.name, mapping[c.type], nullable=c.nullable))
-    return T.StructType(fields)

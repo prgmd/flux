@@ -83,12 +83,6 @@ def test_모든_컬럼에_설명이_있다():
     assert all(c.doc.strip() for c in schema.QUARANTINE_COLUMNS)
 
 
-def test_DDL에_NOT_NULL이_표시된다():
-    text = schema.ddl()
-    assert "listened_at timestamp NOT NULL" in text
-    assert "recording_mbid string," in text
-
-
 def test_아티스트_목록은_배열이다():
     column = next(c for c in schema.COLUMNS if c.name == "artist_mbids")
     assert column.type == "array<string>"
