@@ -14,10 +14,14 @@ from enum import Enum
 # UUID 8-4-4-4-12. 버전과 변형 비트는 보지 않는다.
 # MusicBrainz는 v4를 쓰지만, 형식만 맞으면 통과시키고 실제 존재 여부는
 # dimension 조인이 판정한다. 여기서 더 조이면 멀쩡한 값을 버릴 수 있다.
-_UUID = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.IGNORECASE,
+UUID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+
+# Spark 쪽은 정규식 문자열을 그대로 rlike에 넘기므로 패턴을 따로 공개한다.
+# 세 곳에 같은 식을 적어 두면 한 곳만 고쳤을 때 판정이 갈린다.
+_UUID = re.compile(UUID_PATTERN)
 
 UNKNOWN_CLIENT = "UNKNOWN"
 

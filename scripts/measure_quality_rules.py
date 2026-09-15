@@ -26,14 +26,10 @@ import sys
 from pyspark.sql import functions as F
 
 from flux.common import config
+from flux.silver.mbid import UUID_PATTERN
 from flux.common.spark import session as spark_session
 
 BRONZE_TABLE = "raw_listens"
-
-UUID_PATTERN = (
-    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
 
 # MBID가 들어올 수 있는 자리. mbid.resolve가 보는 곳과 같아야 한다.
 MBID_FIELDS = {

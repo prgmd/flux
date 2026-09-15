@@ -15,12 +15,7 @@ from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 
 from flux.silver import dedup, schema
-from flux.silver.mbid import MbidSource
-
-UUID_PATTERN = (
-    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
+from flux.silver.mbid import UUID_PATTERN, MbidSource
 
 EPOCH_1970 = 0
 
