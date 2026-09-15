@@ -50,6 +50,22 @@ def read_table(spark, directory, table):
     )
 
 
+def check_column_count(spark, directory, table) -> int:
+    """선언한 컬럼 개수와 다른 줄이 몇 개인지 센다.
+
+    스키마를 명시해 읽으면 남는 컬럼은 조용히 버려지고 모자란 컬럼은 NULL이 된다.
+    헤더가 없는 파일이라 컬럼이 한 칸 밀려도 그대로 적재되고, 이름 자리에
+    다른 값이 들어간 채 아무 데서도 안 걸린다.
+
+    원문을 줄 단위로 읽어 탭 개수를 세는 것이 유일하게 확실한 확인이다.
+    표만큼 한 번 더 훑지만 다섯 표를 합쳐 430MB라 몇 초면 끝난다.
+    """
+    expected = len(mb.columns(table))
+    lines = spark.read.text(f"{directory}/{table}")
+    return lines.filter(
+        F.size(F.split(F.col("value"), "\t", -1)) != expected).count()
+
+
 def unnull(column):
     return F.when(column != F.lit(NULL), column)
 
@@ -111,6 +127,19 @@ def main() -> int:
         }
         for name, n in counts.items():
             print(f"  {name:14} {n:>10,}행")
+
+        print()
+        print("컬럼 개수 검사")
+        broken = {}
+        for name in mb.REQUIRED_TABLES:
+            bad = check_column_count(spark, directory, name)
+            broken[name] = bad
+            mark = "통과" if bad == 0 else f"{bad:,}줄 어긋남"
+            print(f"  {name:14} {mark}")
+        if any(broken.values()):
+            print()
+            print("컬럼 개수가 선언과 다른 줄이 있다. 스키마 정의를 확인해야 한다")
+            return 1
 
         # 조회 표는 작으므로 브로드캐스트한다. 297만 행을 셔플하지 않는다.
         # 결과 컬럼에 밑줄 접두어를 붙인다. artist에 gender, type, area가
@@ -203,6 +232,7 @@ def main() -> int:
             "release": release,
             "elapsed_seconds": round(elapsed, 1),
             "source_counts": counts,
+            "column_count_mismatches": broken,
             "rows": rows,
             "filled": {name: filled[name] for name in
                        ("country", "area_name", "type", "gender",
