@@ -78,7 +78,7 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | 층 | 개수 | 어디서 | 무엇을 |
 |---|---:|---|---|
 | 판단 | 466 | 호스트, 3초 | 무엇이 바뀌면 새 버전인가, 어느 줄을 남기는가 |
-| 번역 | 49 | 컨테이너, `-m spark` | 판단 모듈과 Spark 잡이 같은 규칙을 쓰는가 |
+| 번역 | 54 | 컨테이너, `-m spark` | 판단 모듈과 Spark 잡이 같은 규칙을 쓰는가 |
 
 판단이 Spark 없이 도는 것은 그것을 pyspark를 부르지 않는 모듈로 분리했기 때문입니다.
 
@@ -86,7 +86,7 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 
 번역 층은 호스트에서 돌지 않습니다. Spark 4.x가 JDK 17+를 요구하고 호스트에는 없어 건너뛰기로 처리되며, `flux-spark` 이미지 안에서만 돕니다.
 
-번역 층 49개에 **5분 28초**가 걸립니다. 병목은 JVM 기동(38초, 1회)이 아니라 Delta입니다 — 차원을 만들고 `MERGE`하는 Gold 테스트가 수십 행에도 각 13~22초입니다. 판단 층이 3초인 이유가 여기서 드러납니다. 판단을 pyspark 밖으로 뺀 것이 100배의 차이입니다.
+번역 층 54개에 **4분 29초 ~ 6분 09초**가 걸립니다(4회 실측). 병목은 JVM 기동(38초, 1회)이 아니라 Delta입니다 — 차원을 만들고 `MERGE`하는 Gold 테스트가 수십 행에도 각 13~22초입니다. 판단 층이 3초인 이유가 여기서 드러납니다. 판단을 pyspark 밖으로 뺀 것이 100배의 차이입니다.
 
 실행 방법은 [docs/running.md](docs/running.md)에 있습니다.
 
