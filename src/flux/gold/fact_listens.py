@@ -15,7 +15,7 @@ from flux.gold import fact, scd2
 
 
 def explode_artists(silver: DataFrame) -> DataFrame:
-    """아티스트 배열을 펼쳐 한 줄에 하나로 만든다.
+    """아티스트 배열을 펼쳐 한 줄에 하나로 만든다. 판단은 fact.artists_of다.
 
     **explode_outer를 쓴다. explode가 아니다.**
 
@@ -25,9 +25,30 @@ def explode_artists(silver: DataFrame) -> DataFrame:
     (docs/measurements/2026-09-15-fact-grain.md).
 
     explode_outer는 배열이 비면 artist_mbid가 NULL인 줄 하나를 남긴다.
+
+    **펼치기 전에 array_distinct로 배열 안의 중복을 지운다.** Silver는 형식이
+    틀린 값만 걸러내고 중복은 남긴다. 같은 MBID가 두 번 든 청취를 그대로
+    펼치면 GRAIN_KEY가 같은 줄이 둘 생기고, 그 아티스트의 청취 수가 두 배가 된다.
+    `array_distinct(NULL)`은 NULL이므로 빈 배열의 처리는 달라지지 않는다.
     """
     return silver.withColumn(
-        "artist_mbid", F.explode_outer(F.col("artist_mbids")))
+        "artist_mbid",
+        F.explode_outer(F.array_distinct(F.col("artist_mbids"))))
+
+
+def collapsed_by_distinct(silver: DataFrame):
+    """array_distinct가 지운 원소가 몇 개인가를 세는 식.
+
+    실측에 이 숫자가 없다. measure_fact_grain.py는 배열이 몇 개인지만 셌고
+    그 **안**의 중복은 보지 않았다. 방어를 넣은 김에 몇 건이었는지 남긴다.
+
+    0이면 방어가 필요 없었다는 기록이 되고, 0이 아니면 그만큼의 줄이
+    게이트를 실패시켰을 것이라는 기록이 된다. 어느 쪽이든 알아야 한다.
+    """
+    size = F.coalesce(F.size(F.col("artist_mbids")), F.lit(0))
+    unique = F.coalesce(
+        F.size(F.array_distinct(F.col("artist_mbids"))), F.lit(0))
+    return F.sum(size - unique)
 
 
 def prepare(silver: DataFrame, *, built_at) -> DataFrame:
@@ -81,7 +102,8 @@ def placeholders(missing: DataFrame, dim: DataFrame) -> DataFrame:
     return missing.select(*columns)
 
 
-def with_artist_name(listens: DataFrame, dim: DataFrame) -> DataFrame:
+def with_artist_name(listens: DataFrame, dim: DataFrame,
+                     *, broadcast: bool = True) -> DataFrame:
     """청취 시각에 유효했던 이름을 붙인다. 시점 조인이다.
 
     **팩트를 만들 때 쓰지 않는다.** 팩트에는 `artist_mbid`만 싣고 이름은
@@ -97,6 +119,12 @@ def with_artist_name(listens: DataFrame, dim: DataFrame) -> DataFrame:
 
     구간은 시작을 포함하고 끝을 제외한다. 판단은 scd2.covers와 같다.
     양끝을 다 포함하면 이름이 바뀐 바로 그 시각의 청취만 두 줄에 걸린다.
+
+    **브로드캐스트는 플래그로 둔다.** 붙는 것은 이력 전체이고, `F.broadcast()`는
+    `autoBroadcastJoinThreshold`를 무시하고 강제하므로 표가 자라도 코드가
+    조용하다. 기본값은 지금 동작 그대로 두고 S4의 조인 전략 비교에서 잰다.
+    청취에 실제로 쓰인 아티스트가 차원의 10.5%뿐이므로, 조인 전에 차원을
+    거르는 쪽이 이길 수도 있다(docs/measurements/2026-09-15-fact-grain.md).
     """
     versions = dim.select(
         F.col(scd2.BUSINESS_KEY).alias("_k"),
@@ -107,7 +135,7 @@ def with_artist_name(listens: DataFrame, dim: DataFrame) -> DataFrame:
     listened_date = F.date_format(F.col("listened_at"), "yyyy-MM-dd")
     return (
         listens.join(
-            F.broadcast(versions),
+            F.broadcast(versions) if broadcast else versions,
             (F.col("artist_mbid") == F.col("_k"))
             & (listened_date >= F.col("_from"))
             & (listened_date < F.col("_to")),

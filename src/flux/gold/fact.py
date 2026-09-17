@@ -68,6 +68,55 @@ def column_names() -> list[str]:
     return [c.name for c in COLUMNS]
 
 
+# ── 청취 하나가 몇 줄이 되는가 ──────────────────────────────
+
+
+def artists_of(mbids) -> tuple:
+    """이 청취가 팩트에서 몇 줄이 되고, 각 줄의 `artist_mbid`가 무엇인가.
+
+    grain 규칙 전체가 이 함수 하나다. Spark 쪽(flux.gold.fact_listens)이
+    `explode_outer(array_distinct(...))`로 같은 것을 한다.
+
+    **배열이 비면 한 줄을 남긴다.** Spark의 `explode`는 그 줄을 없애므로
+    아티스트 MBID가 없는 청취 9,119만 행(60.32%)이 에러 없이 사라진다.
+    청취 수 집계가 40%짜리가 되고 아무 데서도 걸리지 않는다.
+    그래서 `explode_outer`를 쓴다(docs/measurements/2026-09-15-fact-grain.md).
+
+    **같은 MBID가 두 번 들어 있으면 한 번만 남긴다.** Silver의 `artist_mbids`는
+    형식이 틀린 값을 걸러내지만 중복은 지우지 않는다(flux.silver.build._uuid_array).
+    클라이언트가 같은 아티스트를 두 번 크레딧하면 그대로 배열에 남는다.
+
+    지우지 않으면 두 가지가 동시에 깨진다.
+
+        1. GRAIN_KEY가 완전히 같은 줄이 둘 생겨 불변식이 깨진다
+        2. 그 아티스트의 청취 수가 두 배로 세어진다
+
+    2번이 더 나쁘다. 1번은 게이트가 잡지만 2번은 게이트를 지난 뒤의 집계에서만
+    보이고, 그때는 어느 아티스트가 부풀었는지 알 방법이 없다.
+
+    Silver에서 지우지 않는 이유는 배열 길이가 중복 제거의 정렬 키이기 때문이다
+    (flux.silver.dedup.ORDER의 `_artist_count`). 거기서 지우면 "아티스트 많은
+    쪽을 남긴다"의 판정이 바뀌어 이미 측정한 중복 제거 2.90%가 달라진다.
+    **grain의 유일성을 요구하는 것은 팩트이므로 팩트에서 지운다.**
+
+    순서는 처음 나온 순서를 지킨다. Spark의 `array_distinct`가 그렇게 동작하고,
+    두 구현이 다른 순서를 주면 이 함수로 확인한 것이 그쪽 결과와 다르다.
+    """
+    if not mbids:
+        return (None,)
+
+    seen = []
+    for mbid in mbids:
+        if mbid not in seen:
+            seen.append(mbid)
+    return tuple(seen) if seen else (None,)
+
+
+def fan_out(mbids) -> int:
+    """이 청취가 만드는 팩트 줄 수. 아티스트가 없어도 1이다."""
+    return len(artists_of(mbids))
+
+
 # ── late-arriving dimension ─────────────────────────────────
 #
 # 팩트에는 있는데 차원에 없는 아티스트가 661개다(0.21%, 위 실측).

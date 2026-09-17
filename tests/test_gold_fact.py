@@ -159,3 +159,70 @@ def test_먼_미래_자체는_안_덮는다():
     """valid_to가 9999-12-31이고 끝은 제외이므로 그 하루만 비어 있다.
     실제 청취가 그 날짜일 수 없으므로 문제가 되지 않는다."""
     assert scd2.covers(current(), scd2.FAR_FUTURE) is False
+
+
+# ── 청취 하나가 몇 줄이 되는가 ──────────────────────────────
+
+OTHER = "8538e728-ca0b-4321-b7e5-cff6565dd4c0"
+
+
+def test_아티스트가_없으면_한_줄을_남긴다():
+    """explode는 이 줄을 없앤다. 실측에서 60.32%, 9,119만 행이 여기 해당한다.
+    사라져도 에러가 나지 않아 청취 수 집계가 조용히 40%짜리가 된다."""
+    for empty in (None, (), []):
+        assert fact.artists_of(empty) == (None,)
+        assert fact.fan_out(empty) == 1
+
+
+def test_아티스트가_하나면_한_줄이다():
+    assert fact.artists_of([MBID]) == (MBID,)
+    assert fact.fan_out([MBID]) == 1
+
+
+def test_아티스트가_둘이면_두_줄이다():
+    """실측에서 2명 이상이 0.31%뿐이라 펼침 비용이 +0.42%로 끝난다."""
+    assert fact.artists_of([MBID, OTHER]) == (MBID, OTHER)
+    assert fact.fan_out([MBID, OTHER]) == 2
+
+
+def test_같은_아티스트가_두_번이면_한_줄이다():
+    """Silver는 형식만 걸러내고 중복은 남긴다. 그대로 펼치면 GRAIN_KEY가
+    완전히 같은 줄이 둘 생겨 불변식이 깨지고, 그 아티스트의 청취 수가
+    두 배로 세어진다."""
+    assert fact.artists_of([MBID, MBID]) == (MBID,)
+    assert fact.fan_out([MBID, MBID]) == 1
+
+
+def test_중복을_지워도_다른_아티스트는_남는다():
+    assert fact.artists_of([MBID, OTHER, MBID]) == (MBID, OTHER)
+
+
+def test_처음_나온_순서를_지킨다():
+    """Spark의 array_distinct가 그렇게 동작한다. 두 구현이 다른 순서를 주면
+    이 함수로 확인한 것이 그쪽 결과와 다르다."""
+    assert fact.artists_of([OTHER, MBID, OTHER]) == (OTHER, MBID)
+
+
+def test_grain이_유일해지는_것이_펼치기의_조건이다():
+    """한 청취가 만드는 줄들의 artist_mbid는 서로 달라야 한다.
+    GRAIN_KEY의 앞 두 값은 그 청취 안에서 같으므로, 유일성은 여기서만 온다."""
+    for mbids in ([], [MBID], [MBID, MBID], [MBID, OTHER, MBID]):
+        artists = fact.artists_of(mbids)
+        assert len(artists) == len(set(artists))
+
+
+def test_적재_잡이_array_distinct를_거쳐_펼친다():
+    """flux.gold.fact_listens는 pyspark를 부르므로 호스트에서 import되지 않는다.
+    원문으로 확인한다. explode_outer만 쓰고 array_distinct를 빠뜨리면
+    위 규칙이 Spark 쪽에서만 깨진다."""
+    import re
+    from pathlib import Path
+
+    import flux.gold
+
+    source = (Path(flux.gold.__file__).parent / "fact_listens.py").read_text(
+        encoding="utf-8")
+    # 줄바꿈과 들여쓰기에 흔들리지 않게 공백을 지우고 본다.
+    squeezed = re.sub(r"\s+", "", source)
+    assert "explode_outer(F.array_distinct(" in squeezed
+    assert "F.explode(F.col" not in squeezed

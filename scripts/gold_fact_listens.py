@@ -46,10 +46,19 @@ def main() -> int:
         silver = spark.read.format("delta").load(silver_path)
         dim = spark.read.format("delta").load(dim_path)
 
-        silver_rows = silver.count()
+        # 행 수와 배열 안 중복을 한 번에 센다. count()를 따로 부르면
+        # 1.5억 행을 두 번 훑는다.
+        counted = silver.agg(
+            F.count(F.lit(1)).alias("rows"),
+            fact_listens.collapsed_by_distinct(silver).alias("collapsed"),
+        ).first()
+        silver_rows = counted["rows"]
+        collapsed = counted["collapsed"] or 0
         prepared = fact_listens.prepare(silver, built_at=built_at)
 
         print(f"Silver 행 : {silver_rows:,}")
+        print(f"배열 안 중복 : {collapsed:,}개  "
+              f"(array_distinct가 지웠다. 그대로 펼치면 grain 불변식이 깨진다)")
 
         # 1) 자리를 먼저 만든다
         added = 0
@@ -108,6 +117,7 @@ def main() -> int:
             "built_at": built_at.isoformat(),
             "elapsed_seconds": round(elapsed, 1),
             "silver_rows": silver_rows,
+            "artist_array_duplicates": collapsed,
             "fact_rows": fact_rows,
             "distinct_listens": listens,
             "fan_out": round(fact_rows / listens, 4),
