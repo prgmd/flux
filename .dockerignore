@@ -1,0 +1,29 @@
+# 빌드 컨텍스트는 이미지에 들어가지 않는 것까지 전부 데몬으로 보낸다.
+# .venv 하나가 수백 MB라 이것이 없으면 빌드마다 그만큼을 전송한다.
+
+.venv
+venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+.git
+.env
+.env.local
+
+# 데이터는 볼륨으로 마운트한다. 컨텍스트에 들어갈 일이 없다.
+data/
+dumps/
+warehouse/
+spark-warehouse/
+_checkpoints/
+logs/
+airflow/logs/
+*.parquet
+*.jsonl
+*.tar
+*.tar.*
+*.zst
+*.bz2

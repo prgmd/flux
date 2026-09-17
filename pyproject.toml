@@ -1,0 +1,32 @@
+# flux를 설치 가능한 패키지로 선언한다.
+#
+# 없어도 호스트 테스트는 돈다. pytest.ini의 `pythonpath = src`가 대신하기 때문이다.
+# 문제는 컨테이너다. 스크립트가 전부 `from flux.bronze import ...`로 시작하는데
+# 이미지에는 src가 없고 PYTHONPATH도 비어 있어, 어떤 잡도 import 에러로 죽었다.
+#
+# 측정 문서 15개의 재현 명령이 전부 `... flux-spark python scripts/...` 형태로
+# 남아 있다. 그 `...`이 감추고 있던 것이 이 설치다. 재현할 수 없는 측정은
+# 증거가 아니므로, 설치를 선언으로 고정한다.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flux"
+version = "0.1.0"
+description = "ListenBrainz 기반 음악 트렌드 분석 데이터 파이프라인"
+requires-python = ">=3.11"
+
+# 의존성을 여기에 적지 않는다. 층마다 다른 것을 깔아야 하기 때문이다.
+# Spark 이미지는 requirements-spark.txt, 서빙은 requirements-api.txt,
+# 호스트 테스트는 requirements-dev.txt를 쓴다. 한 목록으로 합치면
+# 서빙 컨테이너에 Spark가 들어간다(명세 S0이 금지한 것).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.4"]
+spark = ["pyspark==4.2.0", "delta-spark==4.4.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

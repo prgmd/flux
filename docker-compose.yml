@@ -86,8 +86,14 @@ services:
     profiles: ["tools"]
     volumes:
       - ./scripts:/opt/flux/scripts:ro
+      # 스크립트만 마운트하면 그 스크립트가 import하는 flux 패키지는
+      # 이미지에 구워진 옛 버전이 쓰인다. 고친 모듈이 반영되지 않아
+      # 같은 코드를 돌린다고 믿으면서 다른 코드를 돌리게 된다.
+      - ./src:/opt/flux/src:ro
+      - ./tests:/opt/flux/tests:ro
     environment:
       SPARK_MASTER_URL: spark://spark-master:7077
+      PYTHONPATH: /opt/flux/src
     depends_on:
       spark-master:
         condition: service_healthy
