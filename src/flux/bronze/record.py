@@ -1,8 +1,16 @@
-"""원본 한 줄을 Bronze 행으로 바꾼다.
+"""원본 한 줄을 Bronze 행으로 바꾼다 — 무엇을 격리하는가의 **선언**.
 
 원칙은 하나다. **`raw_json`을 변형하지 않는다.**
 파싱은 값을 몇 개 뽑아내기 위한 것이지 저장할 형태를 만들기 위한 것이 아니다.
 정규화와 검증은 Silver의 일이다.
+
+**실제 적재는 이 모듈이 하지 않는다.** flux.bronze.ingest가 Spark 표현으로
+같은 판정을 한다. 여기 있는 것은 그 판정의 규칙과, 그 규칙을 Spark 없이
+확인할 수 있는 구현이다. flux.silver.quality와 flux.silver.build의 관계와 같다.
+
+한동안 이 모듈은 아무도 부르지 않았고, 격리 사유 문자열이 여기와 ingest에
+따로 적혀 있었다. 두 곳에 적힌 판정 규칙은 갈라지고, **안 쓰이는 쪽은
+갈라진 줄도 모른다.** 그래서 사유를 Reason으로 모아 양쪽이 같은 값을 쓴다.
 """
 
 import json
@@ -10,6 +18,22 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 MAX_ERROR_LEN = 300
+
+
+class Reason:
+    """격리 사유. 문자열을 그대로 쓰면 오타가 조용히 새 사유를 만든다.
+
+    Spark 쪽(flux.bronze.ingest)이 이 값을 그대로 쓴다. 사유별 합계를 낼 때
+    두 층이 다른 문자열을 쓰고 있으면 같은 사유가 둘로 세어진다.
+
+    Silver의 격리 사유(flux.silver.quality.Reason)와 따로 두는 이유는
+    두 층이 보는 것이 다르기 때문이다. Bronze는 **한 줄이 JSON인가**만 보고,
+    Silver는 그 안의 값이 성한가를 본다.
+    """
+
+    BLANK = "빈 줄"
+    NOT_JSON = "JSON 파싱 실패"
+    NOT_OBJECT = "최상위가 객체가 아니다"
 
 
 @dataclass(frozen=True)
@@ -117,15 +141,15 @@ def build(
 
     stripped = text.strip()
     if not stripped:
-        return reject("빈 줄")
+        return reject(Reason.BLANK)
 
     try:
         parsed = json.loads(stripped)
     except json.JSONDecodeError as exc:
-        return reject(f"JSON 파싱 실패: {exc}")
+        return reject(f"{Reason.NOT_JSON}: {exc}")
 
     if not isinstance(parsed, dict):
-        return reject(f"최상위가 객체가 아니다: {type(parsed).__name__}")
+        return reject(f"{Reason.NOT_OBJECT}: {type(parsed).__name__}")
 
     return Row(
         _ingested_at=ingested_at,

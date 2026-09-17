@@ -11,6 +11,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from flux.bronze import schema
+from flux.bronze.record import Reason
 
 # 한 줄이 JSON 객체로 읽히는지 판정할 때 쓴다.
 # get_json_object는 깨진 JSON에도 null을 주므로, 객체 여부는 따로 본다.
@@ -40,11 +41,15 @@ def build_dataframe(
         lines
         .withColumn("_trimmed", trimmed)
         .withColumn("_probe", probe)
+        # 사유는 flux.bronze.record.Reason에서 온다. 여기에 문자열을 다시 적으면
+        # 같은 사유가 두 값으로 갈려 사유별 합계가 어긋난다.
+        # 순서도 record.build와 같아야 한다. 먼저 걸리는 사유 하나만 남겨야
+        # 사유별 합계가 행 수와 맞는다.
         .withColumn(
             "_reject_reason",
-            F.when(F.length(F.col("_trimmed")) == 0, F.lit("빈 줄"))
-             .when(F.col("_probe").isNull(), F.lit("JSON 파싱 실패"))
-             .when(~F.col("_trimmed").startswith("{"), F.lit("최상위가 객체가 아니다"))
+            F.when(F.length(F.col("_trimmed")) == 0, F.lit(Reason.BLANK))
+             .when(F.col("_probe").isNull(), F.lit(Reason.NOT_JSON))
+             .when(~F.col("_trimmed").startswith("{"), F.lit(Reason.NOT_OBJECT))
              .otherwise(F.lit(None)),
         )
         .withColumn("_ingested_at", F.lit(ingested_at).cast("timestamp"))

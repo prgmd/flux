@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from flux.bronze import record, schema
-from flux.bronze.record import Rejected, Row
+from flux.bronze.record import Reason, Rejected, Row
 
 AT = datetime(2026, 9, 6, 12, 0, 0, tzinfo=timezone.utc)
 DUMP = "listenbrainz-dump-2651-20260904-000002-incremental"
@@ -98,13 +98,13 @@ def test_user_name이_문자열이_아니면_None():
 def test_빈_줄은_격리한다(bad):
     rejected = build(bad)
     assert isinstance(rejected, Rejected)
-    assert "빈 줄" in rejected.error
+    assert Reason.BLANK in rejected.error
 
 
 def test_깨진_JSON은_격리한다():
     rejected = build('{"user_name": "x"')
     assert isinstance(rejected, Rejected)
-    assert "JSON 파싱 실패" in rejected.error
+    assert Reason.NOT_JSON in rejected.error
     assert rejected.raw_line == '{"user_name": "x"'
 
 
@@ -112,7 +112,7 @@ def test_깨진_JSON은_격리한다():
 def test_객체가_아니면_격리한다(bad):
     rejected = build(bad)
     assert isinstance(rejected, Rejected)
-    assert "객체가 아니다" in rejected.error
+    assert Reason.NOT_OBJECT in rejected.error
 
 
 def test_예외를_밖으로_던지지_않는다():
@@ -171,3 +171,51 @@ def test_Kafka_컬럼은_스키마에_없다():
     assert "_kafka_partition" not in names
     assert "_kafka_offset" not in names
     assert "_source_file" in names and "_record_id" in names
+
+
+# ── 두 층이 갈라지지 않게 막는 장치 ─────────────────────────
+
+def _ingest_source() -> str:
+    """flux.bronze.ingest의 원문. import하지 않고 읽는다.
+
+    그 모듈은 꼭대기에서 pyspark를 부르므로 호스트에서 import되지 않는다.
+    그래도 **어떤 문자열을 쓰는지**는 원문으로 확인할 수 있다.
+    """
+    from pathlib import Path
+
+    import flux.bronze
+
+    return (Path(flux.bronze.__file__).parent / "ingest.py").read_text(
+        encoding="utf-8")
+
+
+def test_적재_잡이_격리_사유를_이_모듈에서_가져온다():
+    """Spark 쪽이 사유 문자열을 따로 적으면 같은 사유가 두 값으로 갈린다.
+
+    사유별 합계를 낼 때 한쪽만 세어져 격리 분포가 조용히 틀린다.
+    그 분포가 품질 리포트의 재료이므로 틀리면 결론이 틀린다.
+    """
+    assert "from flux.bronze.record import Reason" in _ingest_source()
+
+
+@pytest.mark.parametrize(
+    "reason", [Reason.BLANK, Reason.NOT_JSON, Reason.NOT_OBJECT])
+def test_적재_잡에_사유_문자열이_직접_박혀_있지_않다(reason):
+    """선언을 한곳에 모아 두고도 리터럴이 남아 있으면 모은 의미가 없다."""
+    source = _ingest_source()
+    assert f'"{reason}"' not in source
+    assert f"'{reason}'" not in source
+
+
+def test_사유가_Silver의_사유와_겹치지_않는다():
+    """두 층의 격리 사유가 같은 문자열이면 어느 층에서 걸린 것인지 알 수 없다.
+
+    Bronze는 한 줄이 JSON인가만 보고, Silver는 그 안의 값이 성한가를 본다.
+    """
+    from flux.silver.quality import Reason as SilverReason
+
+    def values(cls):
+        return {v for k, v in vars(cls).items()
+                if not k.startswith("_") and isinstance(v, str)}
+
+    assert not values(Reason) & values(SilverReason)
