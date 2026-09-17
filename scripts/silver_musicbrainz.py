@@ -28,7 +28,6 @@ from flux.silver import musicbrainz as mb
 
 STAGING = "staging/musicbrainz"
 TABLE_NAME = "mb_artist"
-NULL = "\\N"
 
 
 def read_table(spark, directory, table):
@@ -67,7 +66,13 @@ def check_column_count(spark, directory, table) -> int:
 
 
 def unnull(column):
-    return F.when(column != F.lit(NULL), column)
+    r"""덤프의 NULL 표기를 NULL로. flux.silver.musicbrainz.unnull의 Spark 판이다.
+
+    표기 자체는 그 모듈에서 가져온다. 여기에 `"\N"`을 다시 적으면 원천이
+    표기를 바꿀 때 한쪽만 고치게 되고, 그러면 `\N`이 값으로 적재된다.
+    타입 검사에도 안 걸리고 집계에 문자열 하나로 섞여 든다.
+    """
+    return F.when(column != F.lit(mb.NULL), column)
 
 
 def partial_date(prefix: str):
