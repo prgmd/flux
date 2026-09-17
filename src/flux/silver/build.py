@@ -64,7 +64,19 @@ def with_quality(bronze: DataFrame) -> DataFrame:
     """
     from flux.silver.quality import Reason
 
+    # **없는 것과 객체가 아닌 것을 같이 본다.**
+    #
+    # quality.judge는 `isinstance(..., dict)`로 판정하는데, get_json_object는
+    # 값이 문자열이나 숫자여도 그 스칼라를 돌려준다. isNull()만 보면
+    # `"track_metadata": "문자열"`이 통과하고, 그러면 테스트가 보장하는 규칙과
+    # 실제로 도는 규칙이 다르다. tests/test_silver_quality.py가
+    # 문자열·숫자·배열을 전부 격리 대상으로 고정해 두고 있다.
+    #
+    # 객체 여부는 여는 중괄호로 본다. flux.bronze.ingest가 한 줄이 JSON 객체인지
+    # 볼 때 쓰는 것과 같은 방법이다. `"track_metadata": "{...}"`처럼 객체처럼
+    # 생긴 문자열은 통과하는데, 그 한계도 Bronze와 같다.
     metadata = _json("$.track_metadata")
+    metadata_missing = metadata.isNull() | ~F.trim(metadata).startswith("{")
     listened = F.col("listened_at")
     ingested = F.unix_timestamp(F.col("_ingested_at"))
     user_name = F.trim(F.coalesce(F.col("user_name"), F.lit("")))
@@ -75,7 +87,7 @@ def with_quality(bronze: DataFrame) -> DataFrame:
          .when(listened.isNull(), F.lit(Reason.LISTENED_AT_MISSING))
          .when(listened < EPOCH_1970, F.lit(Reason.LISTENED_AT_BEFORE_1970))
          .when(listened > ingested, F.lit(Reason.LISTENED_AT_FUTURE))
-         .when(metadata.isNull(), F.lit(Reason.METADATA_MISSING))
+         .when(metadata_missing, F.lit(Reason.METADATA_MISSING))
          .otherwise(F.lit(None)),
     )
 

@@ -74,6 +74,13 @@ QUARANTINE_CASES = [
     ("청취 시각 없음", _listen(listened_at=None)),
     ("1970 이전", _listen(listened_at=-1)),
     ("적재보다 미래", _listen(listened_at=INGESTED_EPOCH + 86400)),
+    # get_json_object는 값이 스칼라여도 그것을 돌려준다. isNull()만 보면
+    # 이 셋이 통과해 quality.judge와 갈린다. 처음 이 파일을 쓸 때
+    # 이 케이스를 빠뜨려 그 갈림을 놓쳤다.
+    ("메타데이터 없음", _listen(track_metadata=None)),
+    ("메타데이터가 문자열", _listen(track_metadata="문자열")),
+    ("메타데이터가 숫자", _listen(track_metadata=42)),
+    ("메타데이터가 배열", _listen(track_metadata=[])),
 ]
 
 
@@ -91,6 +98,19 @@ def test_격리_사유가_quality_judge와_같다(spark, label, document):
 
 def test_성한_행은_격리되지_않는다(spark):
     document = _listen()
+    assert quality.judge(document, ingested_at=INGESTED_EPOCH).ok
+
+    bronze = spark.createDataFrame([_bronze_row(document)], BRONZE_SCHEMA)
+    assert build.with_quality(bronze).select("_reason").first()["_reason"] is None
+
+
+def test_메타데이터가_비어도_통과한다(spark):
+    """규칙은 '없음'이다. 비어 있는 것과 없는 것은 다르다.
+
+    객체 여부를 여는 중괄호로 보므로 `{}`는 통과해야 한다. 여기가 깨지면
+    방어가 너무 넓게 걸린 것이다.
+    """
+    document = _listen(track_metadata={})
     assert quality.judge(document, ingested_at=INGESTED_EPOCH).ok
 
     bronze = spark.createDataFrame([_bronze_row(document)], BRONZE_SCHEMA)
