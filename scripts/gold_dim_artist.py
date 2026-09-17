@@ -25,6 +25,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--at", default=None, help="이력을 끊을 날짜. 없으면 오늘")
     parser.add_argument("--shuffle-partitions", type=int, default=64)
+    parser.add_argument("--no-broadcast", action="store_true",
+                        help="차원 조인에 브로드캐스트를 강제하지 않는다. AQE가 고르게 두고 재려고 쓴다")
     args = parser.parse_args()
 
     at = args.at or date.today().isoformat()
@@ -51,7 +53,8 @@ def main() -> int:
 
         if exists:
             before = spark.read.format("delta").load(gold_path).count()
-            dim_artist.merge(spark, gold_path, prepared, at=at)
+            dim_artist.merge(spark, gold_path, prepared, at=at,
+                             broadcast=not args.no_broadcast)
             after = spark.read.format("delta").load(gold_path).count()
             print(f"병합 전  : {before:,}행")
             print(f"병합 후  : {after:,}행")

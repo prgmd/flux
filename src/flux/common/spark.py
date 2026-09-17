@@ -8,22 +8,49 @@ pyspark를 꼭대기에서 부르지 않는다. 호스트에는 Spark가 없고,
 이 모듈을 import하는 것만으로 죽으면 곤란하다.
 """
 
+import os
+
 DELTA_EXTENSION = "io.delta.sql.DeltaSparkSessionExtension"
 DELTA_CATALOG = "org.apache.spark.sql.delta.catalog.DeltaCatalog"
 
+MASTER_ENV = "FLUX_SPARK_MASTER"
+DEFAULT_MASTER = "local[*]"
 
-def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g"):
-    """Delta 확장이 붙은 로컬 모드 세션.
+
+def master() -> str:
+    """어디에 붙을 것인가. 기본은 로컬 모드다.
+
+    잡 전부가 로컬 모드로 돌아 왔다. compose의 standalone 클러스터에 붙는 것은
+    scripts/cluster_check.py 하나뿐이었고, 그래서 **클러스터로 한 일이 없다.**
+
+    S4의 스큐 실험에 직접 걸린다. 로컬 모드에서도 파티션 스큐는 보이지만
+    셔플이 네트워크를 타지 않으므로 salting의 효과가 과소 측정된다.
+
+    환경 변수로 빼 두면 코드를 고치지 않고 양쪽에서 재고 비교할 수 있다.
+
+        FLUX_SPARK_MASTER=spark://spark-master:7077
+
+    기본값을 바꾸지 않는다. 지금까지의 측정이 로컬 모드 결과이고,
+    기본값을 옮기면 그 결과를 재현할 수 없다.
+    """
+    return os.environ.get(MASTER_ENV) or DEFAULT_MASTER
+
+
+def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
+            master_url: str | None = None):
+    """Delta 확장이 붙은 세션.
 
     잡마다 다른 것은 이름, 셔플 파티션 수, 드라이버 메모리 셋뿐이다.
     나머지는 전부 같으므로 여기서만 정한다.
+
+    `master_url`은 테스트가 작은 세션을 만들 때 쓴다. 안 주면 master()가 정한다.
     """
     from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
 
     builder = (
         SparkSession.builder.appName(app_name)
-        .master("local[*]")
+        .master(master_url or master())
         .config("spark.sql.extensions", DELTA_EXTENSION)
         .config("spark.sql.catalog.spark_catalog", DELTA_CATALOG)
         .config("spark.sql.shuffle.partitions", str(shuffle_partitions))

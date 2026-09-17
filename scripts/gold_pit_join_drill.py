@@ -31,6 +31,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true",
                         help="확인 후 되돌리지 않는다")
+    parser.add_argument("--no-broadcast", action="store_true",
+                        help="차원 조인에 브로드캐스트를 강제하지 않는다. AQE가 고르게 두고 재려고 쓴다")
     args = parser.parse_args()
 
     dim_path = config.gold(scd2.TABLE_NAME)
@@ -104,7 +106,8 @@ def main() -> int:
         # 개명 전후의 청취를 각각 조회한다.
         dim_now = spark.read.format("delta").load(dim_path)
         joined = fact_listens.with_artist_name(
-            f.filter(F.col("artist_mbid") == mbid), dim_now)
+            f.filter(F.col("artist_mbid") == mbid), dim_now,
+            broadcast=not args.no_broadcast)
 
         listened_date = F.date_format(F.col("listened_at"), "yyyy-MM-dd")
         by_era = (
