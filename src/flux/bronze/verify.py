@@ -62,16 +62,25 @@ def reconcile(source_lines: int, bronze_rows: int, quarantine_rows: int) -> Reco
 
 
 def count_rows(spark, path: str, source_dump: str | None = None) -> int:
-    """Delta 테이블의 행 수. 경로가 없으면 0으로 본다."""
-    from pyspark.sql import functions as F
-    from pyspark.errors import AnalysisException
+    """Delta 테이블의 행 수. 테이블이 아직 없으면 0으로 본다.
 
-    try:
-        df = spark.read.format("delta").load(path)
-    except (AnalysisException, Exception) as exc:  # noqa: BLE001
-        if "is not a Delta table" in str(exc) or "Path does not exist" in str(exc):
-            return 0
-        raise
+    처음에는 load()를 try로 감싸고 예외 메시지에서 "is not a Delta table"을
+    찾았다. 그 방식은 두 가지가 나쁘다.
+
+    - `except (AnalysisException, Exception)`이 결국 모든 예외를 잡는다.
+      디스크 오류나 권한 문제도 "테이블이 없다"로 읽힐 수 있었다
+    - 메시지 문자열은 Delta 버전이 올라가면 바뀐다. 바뀌면 조용히 raise로 떨어지고,
+      왜 첫 적재가 실패하는지 알기 어렵다
+
+    `isDeltaTable`이 정확히 이 질문에 답한다. 없는 경로에도 False를 준다.
+    """
+    from delta.tables import DeltaTable
+    from pyspark.sql import functions as F
+
+    if not DeltaTable.isDeltaTable(spark, path):
+        return 0
+
+    df = spark.read.format("delta").load(path)
     if source_dump is not None:
         df = df.filter(F.col("_source_dump") == source_dump)
     return df.count()
