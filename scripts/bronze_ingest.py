@@ -19,9 +19,6 @@ from flux.bronze import ingest, merge, schema, verify
 from flux.common import config
 from flux.common.spark import session as spark_session
 
-BRONZE_TABLE = "raw_listens"
-QUARANTINE_TABLE = "invalid_listens"
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -35,8 +32,8 @@ def main() -> int:
     if not files:
         raise SystemExit(f"스테이징에 파일이 없다: {staging}")
 
-    bronze = config.bronze(BRONZE_TABLE)
-    quarantine = config.bronze(QUARANTINE_TABLE)
+    bronze = config.bronze(schema.TABLE_NAME)
+    quarantine = config.bronze(schema.QUARANTINE_TABLE_NAME)
     ingested_at = datetime.now(timezone.utc)
 
     print(f"덤프      : {args.dump}")

@@ -14,11 +14,10 @@ from datetime import datetime, timezone
 
 from pyspark.sql import functions as F
 
+from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.common.spark import session as spark_session
 from flux.silver import build, schema
-
-BRONZE_TABLE = "raw_listens"
 
 
 def main() -> int:
@@ -27,7 +26,7 @@ def main() -> int:
     parser.add_argument("--driver-memory", default="8g")
     args = parser.parse_args()
 
-    bronze_path = config.bronze(BRONZE_TABLE)
+    bronze_path = config.bronze(bronze_schema.TABLE_NAME)
     silver_path = config.silver(schema.TABLE_NAME)
     quarantine_path = config.silver(schema.QUARANTINE_TABLE_NAME)
     built_at = datetime.now(timezone.utc)

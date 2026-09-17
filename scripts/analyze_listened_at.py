@@ -16,10 +16,10 @@ import sys
 
 from pyspark.sql import functions as F
 
+from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.common.spark import session as spark_session
 
-BRONZE_TABLE = "raw_listens"
 
 # 파티션 하나가 이보다 작으면 나눈 값어치가 없다고 본다.
 # Parquet 권장 파일 크기가 128MB 안팎이고, 한 행이 대략 170바이트이므로
@@ -35,7 +35,7 @@ def main() -> int:
     spark = spark_session("flux-listened-at", memory="4g")
     try:
         df = (
-            spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
+            spark.read.format("delta").load(config.bronze(bronze_schema.TABLE_NAME))
             .select("listened_at")
             .withColumn("ts", F.col("listened_at").cast("timestamp"))
             .withColumn("day", F.to_date("ts"))

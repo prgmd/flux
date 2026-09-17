@@ -21,10 +21,9 @@ import sys
 
 from pyspark.sql import functions as F
 
+from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.common.spark import session as spark_session
-
-BRONZE_TABLE = "raw_listens"
 
 
 def main() -> int:
@@ -34,7 +33,7 @@ def main() -> int:
 
     spark = spark_session("flux-user-identity", shuffle_partitions=args.shuffle_partitions)
     try:
-        bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
+        bronze = spark.read.format("delta").load(config.bronze(bronze_schema.TABLE_NAME))
         pairs = bronze.select(
             F.col("user_name"),
             F.get_json_object("raw_json", "$.user_id").alias("user_id"),

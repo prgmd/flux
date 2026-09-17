@@ -25,11 +25,11 @@ import sys
 
 from pyspark.sql import functions as F
 
+from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.silver.mbid import UUID_PATTERN
 from flux.common.spark import session as spark_session
 
-BRONZE_TABLE = "raw_listens"
 
 # MBID가 들어올 수 있는 자리. mbid.resolve가 보는 곳과 같아야 한다.
 MBID_FIELDS = {
@@ -59,7 +59,7 @@ def main() -> int:
 
     spark = spark_session("flux-quality-rules", shuffle_partitions=args.shuffle_partitions)
     try:
-        bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
+        bronze = spark.read.format("delta").load(config.bronze(bronze_schema.TABLE_NAME))
 
         listened = F.col("listened_at")
         # 미래는 그 행이 적재된 시각을 기준으로 본다. 지금 시각으로 재면

@@ -15,11 +15,9 @@ from pathlib import Path
 from delta import DeltaTable
 from pyspark.sql import functions as F
 
+from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.common.spark import session as spark_session
-
-BRONZE_TABLE = "raw_listens"
-QUARANTINE_TABLE = "invalid_listens"
 
 
 def on_disk(path: Path) -> tuple[int, int]:
@@ -40,8 +38,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = config.local_root()
-    bronze_uri = config.bronze(BRONZE_TABLE)
-    bronze_dir = root / "bronze" / BRONZE_TABLE
+    bronze_uri = config.bronze(bronze_schema.TABLE_NAME)
+    bronze_dir = root / "bronze" / bronze_schema.TABLE_NAME
     spark = spark_session("flux-bronze-stats", memory="4g")
     try:
         # spark.sql의 `delta.\`경로\`` 문법은 카탈로그를 거치느라
@@ -59,7 +57,7 @@ def main() -> int:
             F.max("listened_at").alias("newest"),
         ).collect()[0]
 
-        quarantine = spark.read.format("delta").load(config.bronze(QUARANTINE_TABLE)).count()
+        quarantine = spark.read.format("delta").load(config.bronze(bronze_schema.QUARANTINE_TABLE_NAME)).count()
 
         disk_bytes, disk_files = on_disk(bronze_dir)
         active_bytes = detail["sizeInBytes"]

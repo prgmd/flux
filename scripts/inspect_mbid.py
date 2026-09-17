@@ -17,10 +17,9 @@ from collections import Counter
 
 from pyspark.sql import functions as F
 
+from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.common.spark import session as spark_session
-
-BRONZE_TABLE = "raw_listens"
 
 
 def walk(node, prefix, keys):
@@ -42,7 +41,7 @@ def main() -> int:
     root = config.local_root()
     spark = spark_session("flux-inspect-mbid", memory="6g")
     try:
-        bronze = spark.read.format("delta").load(config.bronze(BRONZE_TABLE))
+        bronze = spark.read.format("delta").load(config.bronze(bronze_schema.TABLE_NAME))
         total = bronze.count()
 
         # MBID가 들어올 수 있는 자리를 전부 센다. 명세는 두 곳만 보지만
