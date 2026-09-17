@@ -224,3 +224,57 @@ def test_여는_줄은_정확히_하나씩이다():
         {MBID: row(name="TAFKAP"), OTHER: row(name="새 아티스트")},
     )
     assert staged_keys(staged).count(None) == 2
+
+
+# ── 닫을 수 있는가 ──────────────────────────────────────────
+
+def test_열린_날짜보다_뒤에서만_닫을_수_있다():
+    version = scd2.open_new("k", ("이름", "이름"), at="2026-09-15")
+    assert scd2.closable(version, "2026-09-16")
+    assert scd2.closable(version, "2099-01-01")
+
+
+def test_열린_날짜와_같은_날짜로는_닫을_수_없다():
+    """닫으면 valid_from == valid_to가 되어 유효 구간이 0인 줄이 남는다.
+    어떤 시점도 덮지 못하는 줄이고, dim_artist.invariants가 위반으로 센다."""
+    version = scd2.open_new("k", ("이름", "이름"), at="2026-09-15")
+    assert not scd2.closable(version, "2026-09-15")
+
+
+def test_열린_날짜보다_앞선_날짜로는_닫을_수_없다():
+    version = scd2.open_new("k", ("이름", "이름"), at="2026-09-15")
+    assert not scd2.closable(version, "2026-09-14")
+
+
+def test_닫을_수_없는_줄을_닫으면_아무_시점도_덮지_못한다():
+    """closable이 막는 것이 무엇인지를 covers로 확인한다."""
+    version = scd2.open_new("k", ("이름", "이름"), at="2026-09-15")
+    assert not scd2.closable(version, "2026-09-15")
+
+    broken = scd2.close(version, at="2026-09-15")
+    for at in ("2026-09-14", "2026-09-15", "2026-09-16"):
+        assert not scd2.covers(broken, at)
+
+
+def test_placeholder는_먼_과거에서_열리므로_닫을_수_있다():
+    """차원에 없던 아티스트의 자리는 1970-01-01에서 열린다. 다음 릴리스에
+    진짜 이름이 들어오면 그날로 닫혀야 한다."""
+    from flux.gold import fact
+
+    version = scd2.open_new("k", (fact.PLACEHOLDER_NAME, None),
+                            at=fact.PLACEHOLDER_VALID_FROM)
+    assert scd2.closable(version, "2026-09-15")
+
+
+def test_적재_잡이_닫기_전에_확인한다():
+    """flux.gold.dim_artist는 pyspark를 부르므로 호스트에서 import되지 않는다.
+    원문으로 확인한다. merge가 unclosable을 보지 않으면 잡이 자기 게이트를 깬다."""
+    from pathlib import Path
+
+    import flux.gold
+
+    source = (Path(flux.gold.__file__).parent / "dim_artist.py").read_text(
+        encoding="utf-8")
+    merge_body = source.split("def merge(", 1)[1].split("\ndef ", 1)[0]
+    assert "unclosable(" in merge_body
+    assert "SameDayReload" in merge_body

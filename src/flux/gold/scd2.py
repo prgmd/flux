@@ -75,6 +75,20 @@ def changed(current, incoming) -> bool:
     return any(a != b for a, b in zip(tracked(current), tracked(incoming)))
 
 
+def closable(version: Version, at: str) -> bool:
+    """이 줄을 `at` 시점에 닫아도 되는가.
+
+    `valid_from`이 이미 `at`이면 닫는 순간 `valid_from == valid_to`가 되어
+    **유효 구간이 0인 줄**이 남는다. covers가 어떤 시점도 덮지 못하는 줄이고,
+    구간을 `[from, to)`로 정한 이상 그런 줄은 존재할 이유가 없다.
+
+    같은 날짜로 두 번 실을 때 생긴다. 적재 전에 막아야 한다 —
+    쓴 뒤에 불변식으로 잡으면 이미 망가진 차원을 되돌려야 한다.
+    Spark 쪽은 flux.gold.dim_artist.unclosable이 같은 판단을 한다.
+    """
+    return version.valid_from < at
+
+
 def close(version: Version, *, at: str) -> Version:
     """이력 한 줄을 닫는다. 값은 그대로 두고 유효 구간만 끊는다.
 

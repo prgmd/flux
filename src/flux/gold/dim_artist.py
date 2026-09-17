@@ -48,7 +48,89 @@ def create(prepared: DataFrame, path: str) -> None:
         .option("overwriteSchema", "true").save(path)
 
 
-def _staged(spark: SparkSession, path: str, prepared: DataFrame) -> DataFrame:
+def _hint(df: DataFrame, broadcast: bool) -> DataFrame:
+    """조인 힌트를 붙일지 말지.
+
+    `F.broadcast()`는 `autoBroadcastJoinThreshold`(기본 10MB)를 **무시하고**
+    강제한다. 편한 만큼 위험하다 — 표가 자라도 코드가 조용하다.
+
+    지금 붙는 표는 차원의 현재 줄 전체, 2,976,554행이다. 드라이버 8g로
+    지금은 통과하지만 아티스트는 계속 늘고 이력 줄도 쌓인다.
+
+    그리고 같은 저장소의 다른 판단과 어긋난다. 팩트 쪽에서는 297만을 크게 보고
+    "조인 전에 차원을 거르는 것"을 선택지로 뒀다
+    (docs/measurements/2026-09-15-fact-grain.md).
+
+    **기본값은 지금 동작 그대로 둔다.** 이미 이 설정으로 측정한 결과가 있고,
+    기본값을 바꾸면 그 결과를 재현할 수 없다. S4의 AQE 실험이 이 플래그를
+    끄고 켜서 재고, 그 결과로 기본값을 정한다.
+    """
+    return F.broadcast(df) if broadcast else df
+
+
+_CUR_VALID_FROM = f"_cur_{scd2.VALID_FROM}"
+
+
+def _marked(spark: SparkSession, path: str, prepared: DataFrame,
+            *, broadcast: bool):
+    """들어온 줄마다 "차원에 이미 있는가, 값이 달라졌는가"를 붙인다.
+
+    `_staged`와 `unclosable`이 같은 조인을 본다. 따로 만들면 한쪽만 고쳤을 때
+    거부 판정과 실제 MERGE가 다른 것을 보게 된다.
+    """
+    current = (
+        spark.read.format("delta").load(path)
+        .filter(F.col(scd2.IS_CURRENT))
+        .select(
+            F.col(scd2.BUSINESS_KEY).alias("_k"),
+            F.col(scd2.VALID_FROM).alias(_CUR_VALID_FROM),
+            *[F.col(name).alias(f"_cur_{name}") for name in scd2.TRACKED_COLUMNS],
+        )
+    )
+
+    marked = prepared.join(_hint(current, broadcast),
+                           F.col(scd2.BUSINESS_KEY) == F.col("_k"), "left")
+
+    differs = None
+    for name in scd2.TRACKED_COLUMNS:
+        one = ~F.col(name).eqNullSafe(F.col(f"_cur_{name}"))
+        differs = one if differs is None else (differs | one)
+
+    return marked, differs
+
+
+class SameDayReload(RuntimeError):
+    """같은 날짜로 다시 싣다가 빈 유효 구간을 만들게 될 때 발생한다."""
+
+
+def unclosable(spark: SparkSession, path: str, prepared: DataFrame,
+               *, at: str, broadcast: bool = True) -> int:
+    """`at` 시점에 닫으면 빈 구간이 되는 줄이 몇 개인가.
+
+    현재 줄의 `valid_from`이 이미 `at`이면, 그 줄을 닫는 순간
+    `valid_from == valid_to`가 되어 **유효 구간이 0인 줄**이 남는다.
+    `invariants`의 `rows_with_invalid_range`가 그것을 위반으로 센다.
+
+    **잡이 자기 게이트를 깨는 모양**이므로 적재 전에 막는다.
+
+    언제 생기는가: 같은 `--at`으로 두 번 돌리면서 그 사이에 MusicBrainz
+    릴리스가 바뀐 경우다. 하루에 릴리스 두 개를 싣는 운영에서 실재한다.
+    개명 드릴은 `DRILL_DATE`를 적재일과 분리해 두어 여기 걸리지 않는다.
+
+    값을 바꾸지 않은 줄은 세지 않는다. MERGE가 건드리지 않으므로 무해하다.
+    판단은 scd2.closable과 같다.
+    """
+    marked, differs = _marked(spark, path, prepared, broadcast=broadcast)
+    return (
+        marked
+        .filter(F.col("_k").isNotNull() & differs)
+        .filter(F.col(_CUR_VALID_FROM) >= F.lit(at))
+        .count()
+    )
+
+
+def _staged(spark: SparkSession, path: str, prepared: DataFrame,
+            *, broadcast: bool = True) -> DataFrame:
     """MERGE 한 번으로 닫고 열기 위해 원본을 두 줄로 부풀린다.
 
     Delta의 MERGE는 **대상 한 줄을 한 번만** 건드린다. 그래서 같은 아티스트의
@@ -65,21 +147,7 @@ def _staged(spark: SparkSession, path: str, prepared: DataFrame) -> DataFrame:
     같은 규칙을 호스트에서 검증할 수 있는 형태로 적은 것이 scd2.stage다.
     여기는 그것을 Spark 컬럼 연산으로 옮긴 것이다.
     """
-    current = (
-        spark.read.format("delta").load(path)
-        .filter(F.col(scd2.IS_CURRENT))
-        .select(
-            F.col(scd2.BUSINESS_KEY).alias("_k"),
-            *[F.col(name).alias(f"_cur_{name}") for name in scd2.TRACKED_COLUMNS],
-        )
-    )
-
-    marked = prepared.join(F.broadcast(current),
-                           F.col(scd2.BUSINESS_KEY) == F.col("_k"), "left")
-    differs = None
-    for name in scd2.TRACKED_COLUMNS:
-        one = ~F.col(name).eqNullSafe(F.col(f"_cur_{name}"))
-        differs = one if differs is None else (differs | one)
+    marked, differs = _marked(spark, path, prepared, broadcast=broadcast)
 
     changed_rows = marked.filter(F.col("_k").isNotNull() & differs).select(*COLUMNS)
     new_rows = marked.filter(F.col("_k").isNull()).select(*COLUMNS)
@@ -92,7 +160,8 @@ def _staged(spark: SparkSession, path: str, prepared: DataFrame) -> DataFrame:
     return to_close.unionByName(to_open).unionByName(brand_new)
 
 
-def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str) -> None:
+def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str,
+          broadcast: bool = True) -> None:
     """닫기와 열기를 **한 번의 MERGE**로 처리한다.
 
     두 문장으로 나누면 그 사이에서 죽었을 때 옛 줄은 닫혔는데 새 줄이 없는
@@ -100,8 +169,19 @@ def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str) -> No
     (docs/measurements/2026-09-15-dim-artist-scd2.md).
 
     Delta의 ACID는 **문장 하나**를 지킨다. 잡 전체를 지키려면 문장이 하나여야 한다.
+
+    쓰기 전에 `unclosable`을 본다. 빈 유효 구간을 만들 상황이면 **아무것도 쓰지
+    않고 거부한다.** 쓴 뒤에 불변식으로 잡으면 이미 망가진 차원을 되돌려야 한다.
     """
-    staged = _staged(spark, path, prepared)
+    blocked = unclosable(spark, path, prepared, at=at, broadcast=broadcast)
+    if blocked:
+        raise SameDayReload(
+            f"{at}에 닫으면 유효 구간이 빈 줄이 {blocked:,}개 생긴다. "
+            f"이미 {at}에 열린 줄을 같은 날짜로 닫으려 하고 있다. "
+            "--at을 다음 날짜로 주거나, 앞의 적재를 되돌린 뒤 다시 실어야 한다."
+        )
+
+    staged = _staged(spark, path, prepared, broadcast=broadcast)
     table = DeltaTable.forPath(spark, path)
     (
         table.alias("t")
