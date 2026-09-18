@@ -78,11 +78,13 @@ def run_once(cfg, rep: int, *, fact_path: str, root: Path,
         spark.stop()
 
     # 이벤트 로그는 세션을 닫아야 마저 쓰인다.
-    files = [p for p in logs.iterdir() if p.is_file()]
-    parsed = eventlog.parse([])
-    if files:
-        parsed = eventlog.read(max(files, key=lambda p: p.stat().st_size))
-    summary = eventlog.summary(parsed)
+    #
+    # **없으면 멈춘다.** 처음엔 못 찾으면 빈 결과로 넘어가게 뒀는데, 그러면
+    # 최장/중앙 비율이 0.00으로 나오면서 실험은 멀쩡히 끝난 것처럼 보였다.
+    # 스큐가 없다는 측정값과 구분이 안 된다.
+    summary = eventlog.summary(eventlog.read(logs))
+    if not summary["stages"]:
+        raise eventlog.NoEventLog(f"단계가 하나도 안 잡혔다: {logs}")
 
     return {
         "config": cfg.name,

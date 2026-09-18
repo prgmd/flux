@@ -23,6 +23,7 @@ UI의 REST API가 없다. 남는 길이 둘이다.
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 TASK_END = "SparkListenerTaskEnd"
 APP_START = "SparkListenerApplicationStart"
@@ -142,9 +143,69 @@ def parse(lines) -> dict:
     }
 
 
+# 롤링 이벤트 로그의 조각 이름. Spark 4는 로그를 **파일 하나가 아니라
+# 디렉터리**로 쓴다.
+#
+#     eventlogs/<잡 이름>/eventlog_v2_<앱 id>/
+#         appstatus_<앱 id>          비어 있는 표시 파일
+#         events_1_<앱 id>.zstd      실제 내용
+#
+# 파일만 찾다가 아무것도 못 찾았고, **그런데도 0을 돌려줬다.** 그래서
+# 최장/중앙 비율이 0.00으로 나왔는데 실험은 멀쩡히 끝난 것처럼 보였다.
+EVENT_PREFIX = "events_"
+
+
+class NoEventLog(Exception):
+    """이벤트 로그를 못 찾았다.
+
+    조용히 0을 돌려주면 **스큐가 없는 것처럼 보인다.** 실험 결과가 그대로
+    표에 들어가고, 읽는 사람은 그것이 측정값인 줄 안다.
+    """
+
+
+def _order(path: Path):
+    """events_2_...가 events_10_...보다 앞이어야 한다. 사전순은 반대로 준다."""
+    parts = path.name.split("_")
+    try:
+        return int(parts[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+def event_files(path) -> list:
+    """이벤트 파일들. 파일 하나를 줘도 되고 로그 디렉터리를 줘도 된다."""
+    path = Path(path)
+    if path.is_file():
+        return [path]
+    found = sorted((p for p in path.rglob(f"{EVENT_PREFIX}*") if p.is_file()),
+                   key=_order)
+    if not found:
+        raise NoEventLog(f"이벤트 로그가 없다: {path}")
+    return found
+
+
+def _open(path: Path):
+    """zstd로 눌린 것을 그대로 읽는다.
+
+    Spark 4는 이벤트 로그를 기본으로 압축한다. 파이썬 3.14가 표준 라이브러리에
+    zstd를 넣어(PEP 784) 따로 의존을 더하지 않아도 된다.
+    """
+    if path.suffix == ".zstd":
+        from compression.zstd import ZstdFile
+        import io as _io
+        return _io.TextIOWrapper(ZstdFile(path, "rb"),
+                                 encoding="utf-8", errors="replace")
+    return open(path, encoding="utf-8", errors="replace")
+
+
 def read(path) -> dict:
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        return parse(handle)
+    """로그를 읽어 단계별로 묶는다. 조각이 여럿이면 순서대로 잇는다."""
+    def stream():
+        for part in event_files(path):
+            with _open(part) as handle:
+                yield from handle
+
+    return parse(stream())
 
 
 def heaviest(stages):

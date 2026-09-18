@@ -6,6 +6,8 @@
 
 import json
 
+import pytest
+
 from flux.common import eventlog
 
 
@@ -159,3 +161,69 @@ def test_끝나지_않았으면_전체_시간이_없다():
         task_end(1, 10),
     ])
     assert parsed["app_ms"] is None
+
+
+# ── 로그를 어디서 찾는가 ────────────────────────────────────
+
+def rolling(tmp_path, parts, *, suffix=""):
+    """Spark 4가 쓰는 롤링 로그 모양을 만든다.
+
+    파일 하나가 아니라 디렉터리다. 이걸 몰라서 파일만 찾다가 아무것도
+    못 찾았고, 그런데도 0을 돌려줘서 스큐가 없는 것처럼 보였다.
+    """
+    inner = tmp_path / "eventlog_v2_local-123"
+    inner.mkdir(parents=True)
+    (inner / "appstatus_local-123").write_text("", encoding="utf-8")
+    for n, lines in parts.items():
+        (inner / f"events_{n}_local-123{suffix}").write_text(
+            "\n".join(lines), encoding="utf-8")
+    return tmp_path
+
+
+def test_디렉터리를_줘도_찾는다(tmp_path):
+    t = rolling(tmp_path, {1: [task_end(1, 10)]})
+    assert len(eventlog.event_files(t)) == 1
+
+
+def test_표시_파일은_안_읽는다(tmp_path):
+    """appstatus는 비어 있는 표시 파일이다. 읽으면 아무것도 안 나온다."""
+    t = rolling(tmp_path, {1: [task_end(1, 10)]})
+    assert all(p.name.startswith("events_") for p in eventlog.event_files(t))
+
+
+def test_조각을_번호순으로_잇는다(tmp_path):
+    """events_10_이 events_2_보다 뒤여야 한다. 사전순은 반대로 준다."""
+    t = rolling(tmp_path, {1: [], 2: [], 10: []})
+    order = [eventlog._order(p) for p in eventlog.event_files(t)]
+    assert order == [1, 2, 10]
+
+
+def test_여러_조각을_합쳐_읽는다(tmp_path):
+    t = rolling(tmp_path, {1: [task_end(1, 10)], 2: [task_end(1, 20)]})
+    assert eventlog.read(t)["stages"][0].tasks == 2
+
+
+def test_파일_하나를_줘도_읽는다(tmp_path):
+    flat = tmp_path / "plain"
+    flat.write_text(task_end(1, 10), encoding="utf-8")
+    assert eventlog.read(flat)["stages"][0].tasks == 1
+
+
+def test_로그가_없으면_멈춘다(tmp_path):
+    """조용히 0을 돌려주면 스큐가 없다는 측정값과 구분이 안 된다."""
+    empty = tmp_path / "eventlog_v2_local-123"
+    empty.mkdir(parents=True)
+    (empty / "appstatus_local-123").write_text("", encoding="utf-8")
+    with pytest.raises(eventlog.NoEventLog):
+        eventlog.event_files(tmp_path)
+
+
+def test_zstd로_눌린_것을_읽는다(tmp_path):
+    """Spark 4는 이벤트 로그를 기본으로 압축한다."""
+    from compression.zstd import compress
+
+    inner = tmp_path / "eventlog_v2_local-123"
+    inner.mkdir(parents=True)
+    body = "\n".join([task_end(1, 10), task_end(1, 90)]).encode("utf-8")
+    (inner / "events_1_local-123.zstd").write_bytes(compress(body))
+    assert eventlog.read(tmp_path)["stages"][0].max_over_median == 1.8
