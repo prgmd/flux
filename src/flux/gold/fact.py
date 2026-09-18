@@ -28,6 +28,7 @@ pyspark를 부르지 않는다. 실제 적재는 flux.gold.fact_listens가 한�
 
 from dataclasses import dataclass
 
+from flux.gold import scd2
 from flux.silver.schema import Column
 
 TABLE_NAME = "fact_listens"
@@ -129,8 +130,10 @@ def fan_out(mbids) -> int:
 PLACEHOLDER_NAME = "(알 수 없는 아티스트)"
 
 # placeholder는 언제부터 유효한가. 어떤 청취든 덮어야 하므로 먼 과거로 둔다.
-# 청취 기록의 시작이 2005년이고 그 앞에 여유를 둔다.
-PLACEHOLDER_VALID_FROM = "1970-01-01"
+#
+# **초기 적재와 같은 값을 써야 한다.** 여기만 먼 과거로 두고 본 차원은 적재일로
+# 뒀다가 시점 조인이 빗나갔다. 같은 판단이 두 곳에 따로 적혀 있으면 갈라진다.
+PLACEHOLDER_VALID_FROM = scd2.FAR_PAST
 
 
 @dataclass(frozen=True)

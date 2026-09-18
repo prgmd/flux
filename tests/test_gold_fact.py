@@ -226,3 +226,54 @@ def test_적재_잡이_array_distinct를_거쳐_펼친다():
     squeezed = re.sub(r"\s+", "", source)
     assert "explode_outer(F.array_distinct(" in squeezed
     assert "F.explode(F.col" not in squeezed
+
+
+# ── 초기 적재는 언제부터 유효한가 ───────────────────────────
+
+def test_placeholder와_초기_적재가_같은_시작을_쓴다():
+    """같은 판단을 두 곳에 따로 적었다가 갈라졌다. placeholder만 먼 과거였고
+    본 차원은 적재일이라, 적재일 이전 청취가 어떤 버전에도 안 걸렸다."""
+    assert fact.PLACEHOLDER_VALID_FROM == scd2.FAR_PAST
+
+
+def test_초기_적재는_먼_과거부터다():
+    """valid_from은 '언제부터 참이었나'이지 '우리가 언제 알았나'가 아니다.
+    지식 시간은 _release가 들고 있다."""
+    assert scd2.FAR_PAST == "1970-01-01"
+
+
+def test_먼_과거가_어떤_청취보다_이르다():
+    """청취 기록은 2005년에 시작하고, 품질 규칙이 1970년 이전을 격리한다."""
+    assert scd2.FAR_PAST <= "1970-01-01" < "2005-01-01"
+
+
+def test_먼_과거로_열린_줄이_옛_청취를_덮는다():
+    """이것이 안 되면 SCD2를 만든 이유가 사라진다."""
+    v = scd2.open_new(MBID, ("BTS",), at=scd2.FAR_PAST)
+    for at in ("2005-01-01", "2014-07-19", "2026-09-06"):
+        assert scd2.covers(v, at) is True
+
+
+def test_적재일로_열면_그_전_청취를_못_덮는다():
+    """실제로 저지른 오류를 고정한다. 되돌리면 이 테스트가 깨진다."""
+    v = scd2.open_new(MBID, ("BTS",), at="2026-09-15")
+    assert scd2.covers(v, "2014-07-19") is False
+
+
+def test_초기_적재가_valid_from을_먼_과거로_덮는다():
+    """flux.gold.dim_artist는 pyspark를 부르므로 호스트에서 import되지 않는다.
+    원문으로 확인한다.
+
+    이 한 줄이 빠지면 prepare가 넣은 적재일이 그대로 들어가고, 적재일 이전의
+    팩트가 어떤 차원 버전에도 안 걸린다. 실제로 그래서 시점 조인이 300만 건
+    전부 짝을 못 찾았다. 위의 순수 테스트들은 이 회귀를 못 잡는다.
+    """
+    import re
+    from pathlib import Path
+
+    import flux.gold
+
+    source = (Path(flux.gold.__file__).parent / "dim_artist.py").read_text(
+        encoding="utf-8")
+    squeezed = re.sub(r"\s+", "", source)
+    assert "withColumn(scd2.VALID_FROM,F.lit(scd2.FAR_PAST))" in squeezed

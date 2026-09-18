@@ -43,9 +43,24 @@ def prepare(silver: DataFrame, *, at: str, release: str) -> DataFrame:
 
 
 def create(prepared: DataFrame, path: str) -> None:
-    """차원을 처음 만든다. 모든 행이 첫 번째 버전이다."""
-    prepared.write.format("delta").mode("overwrite") \
+    """차원을 처음 만든다. 모든 행이 첫 번째 버전이다.
+
+    **valid_from을 먼 과거로 덮어쓴다.** prepare가 넣은 적재일은 병합에서
+    새 버전이 열리는 시각으로는 맞지만 초기 적재에서는 틀린다. 그러면
+    적재일 이전의 팩트가 **어떤 차원 버전에도 안 걸린다.**
+
+    실제로 그렇게 됐다. 차원이 2026-09-15부터 유효한데 청취는 2014년부터라
+    시점 조인이 300만 건 전부 짝을 못 찾았다
+    (docs/measurements/2026-09-18-point-in-time-join.md).
+
+    호출부가 다른 at을 넘기게 하지 않고 여기서 덮는다. 잊어버릴 수 있는
+    자리를 남기지 않는다.
+    """
+    (
+        prepared.withColumn(scd2.VALID_FROM, F.lit(scd2.FAR_PAST))
+        .write.format("delta").mode("overwrite")
         .option("overwriteSchema", "true").save(path)
+    )
 
 
 def _hint(df: DataFrame, broadcast: bool) -> DataFrame:
