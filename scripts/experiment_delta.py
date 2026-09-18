@@ -45,9 +45,25 @@ from flux.gold import fact, mart, mart_build
 
 CODECS = ("snappy", "zstd")
 
+# OPTIMIZE가 노리는 파일 크기. 기본값은 1GB인데 이 마트가 그보다 작아서
+# **파일 하나로 합쳐졌고, 그러면 Z-Order가 잴 것이 없어진다.**
+# 파일이 여럿 남도록 줄여 잡는다.
+MAX_FILE_MB = 32
 
-def folder_bytes(path: Path) -> int:
-    return sum(p.stat().st_size for p in Path(path).rglob("*.parquet"))
+
+def active_bytes(path) -> int:
+    """**살아 있는 파일만** 센다.
+
+    폴더를 glob하면 안 된다. OPTIMIZE는 새 파일을 쓰고 옛 파일을 로그에서만
+    지우므로 **디스크에는 둘 다 남는다.** 폴더 크기를 재면 최적화할수록
+    "커지는" 결과가 나온다. 실제로 612MB가 1,297MB로, 다시 1,982MB로
+    늘어나는 것을 보고서야 알아챘다.
+
+    트랜잭션 로그가 어느 파일이 지금 테이블인지 알고 있다(flux.common.deltalog).
+    """
+    root = Path(path)
+    return sum((root / name).stat().st_size
+               for name in deltalog.active_files(root))
 
 
 def timed(fn):
@@ -67,7 +83,7 @@ def probe(spark, path: str, artist: str):
 
 def snapshot(spark, path: str, artist: str, label: str) -> dict:
     active = len(deltalog.active_files(path))
-    size = folder_bytes(Path(path))
+    size = active_bytes(path)
     _, full = timed(lambda: spark.read.format("delta").load(path).count())
     hits, filtered = timed(lambda: probe(spark, path, artist))
     row = {
@@ -119,38 +135,45 @@ def main() -> int:
             row["write_seconds"] = write
             results[f"codec_{codec}"] = row
 
-        # 2) OPTIMIZE 전후. 기본 코덱으로 다시 쓴 사본에 건다.
+        # 2) 배치 비교. 같은 원본에서 사본 셋을 만들어 각각 다르게 둔다.
+        #
+        # **순서대로 걸면 안 된다.** 처음엔 한 사본에 OPTIMIZE를 걸고 그 위에
+        # Z-Order를 걸었는데, OPTIMIZE가 파일을 1개로 합쳐 버려서 Z-Order가
+        # 할 일이 없었다. data skipping은 **파일이 여럿일 때** 건너뛰는
+        # 기법이라 하나면 건너뛸 대상이 없다.
+        #
+        # 그래서 사본을 따로 만들어 나란히 비교한다.
         print()
-        print("OPTIMIZE")
-        target = str(root / "experiments" / "mart_optimize")
-        shutil.rmtree(target, ignore_errors=True)
-        source.write.format("delta").mode("overwrite").save(target)
-        results["optimize_before"] = snapshot(spark, target, artist, "전")
+        print(f"배치 비교 (OPTIMIZE 목표 파일 크기 {MAX_FILE_MB}MB)")
+        spark.conf.set("spark.databricks.delta.optimize.maxFileSize",
+                       str(MAX_FILE_MB * 1024 * 1024))
 
-        _, took = timed(lambda: spark.sql(f"OPTIMIZE delta.`{target}`"))
-        results["optimize_after"] = snapshot(
-            spark, target, artist, f"후 ({took}초 걸림)")
-        results["optimize_seconds"] = took
-
-        # 3) Z-Order. OPTIMIZE된 것에 정렬을 더한다.
-        print()
-        print("Z-Order (artist_mbid)")
-        _, took = timed(lambda: spark.sql(
-            f"OPTIMIZE delta.`{target}` ZORDER BY (artist_mbid)"))
-        results["zorder_after"] = snapshot(
-            spark, target, artist, f"후 ({took}초 걸림)")
-        results["zorder_seconds"] = took
+        plans = [
+            ("as_written", None, "쓴 그대로"),
+            ("optimized", f"OPTIMIZE delta.`{{path}}`", "OPTIMIZE"),
+            ("zordered",
+             f"OPTIMIZE delta.`{{path}}` ZORDER BY (artist_mbid)", "Z-Order"),
+        ]
+        for key, sql, label in plans:
+            target = str(root / "experiments" / f"mart_{key}")
+            shutil.rmtree(target, ignore_errors=True)
+            source.write.format("delta").mode("overwrite").save(target)
+            took = 0.0
+            if sql:
+                _, took = timed(lambda: spark.sql(sql.format(path=target)))
+            row = snapshot(spark, target, artist,
+                           f"{label}{f' ({took}초)' if sql else ''}")
+            row["plan"] = key
+            row["rewrite_seconds"] = took
+            results[key] = row
 
         print()
         print("정리")
-        before = results["optimize_before"]
-        after = results["optimize_after"]
-        zorder = results["zorder_after"]
-        print(f"  파일 개수   {before['active_files']:>5} → "
-              f"{after['active_files']:>5} (OPTIMIZE)")
-        print(f"  필터 조회   {before['filter_seconds']:>5.2f}초 → "
-              f"{after['filter_seconds']:>5.2f}초 → "
-              f"{zorder['filter_seconds']:>5.2f}초 (Z-Order)")
+        print(f"  {'배치':12} {'파일':>6} {'크기':>10} {'필터 조회':>10}")
+        for key, _, label in plans:
+            row = results[key]
+            print(f"  {label:12} {row['active_files']:>6,} "
+                  f"{row['bytes'] / 1e6:>9.1f}MB {row['filter_seconds']:>9.2f}초")
         for codec in CODECS:
             row = results[f"codec_{codec}"]
             print(f"  {codec:6} {row['bytes'] / 1e6:>8.1f}MB  "
