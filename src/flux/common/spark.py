@@ -37,13 +37,17 @@ def master() -> str:
 
 
 def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
-            master_url: str | None = None):
+            master_url: str | None = None, extra: dict | None = None):
     """Delta 확장이 붙은 세션.
 
     잡마다 다른 것은 이름, 셔플 파티션 수, 드라이버 메모리 셋뿐이다.
     나머지는 전부 같으므로 여기서만 정한다.
 
     `master_url`은 테스트가 작은 세션을 만들 때 쓴다. 안 주면 master()가 정한다.
+
+    `extra`는 S4의 스큐 실험이 쓴다. AQE를 켜고 끄거나 이벤트 로그를 남기는
+    설정을 밖에서 주입한다. **기본값은 비어 있다.** 실험용 설정이 평소 잡에
+    스며들면 지금까지의 측정과 비교할 수 없게 된다.
     """
     from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
@@ -57,4 +61,6 @@ def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
         .config("spark.ui.enabled", "false")
         .config("spark.driver.memory", memory)
     )
+    for key, value in (extra or {}).items():
+        builder = builder.config(key, value)
     return configure_spark_with_delta_pip(builder).getOrCreate()
