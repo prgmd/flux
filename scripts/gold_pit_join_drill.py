@@ -94,13 +94,27 @@ def main() -> int:
                                     scd2.IS_CURRENT: F.lit(False)})
             .execute()
         )
+        # **읽는 버전을 못 박는다.** 위에서 만든 dim을 그대로 쓰면 안 된다.
+        #
+        # 데이터프레임은 결과가 아니라 계산 방법이라, write가 실제로 도는 시점에
+        # Delta가 **최신 스냅샷을 다시 읽는다.** 그때는 방금 MERGE가 현재 줄을
+        # 닫은 뒤이므로 is_current 필터에 아무것도 안 걸리고, 새 줄이 통째로
+        # 안 들어간다. 그러면 개명 후 청취가 짝을 못 찾는다.
+        #
+        # 병합 직전 버전을 명시해 그때의 값을 가져온다.
         renamed = (
-            dim.filter((F.col(scd2.BUSINESS_KEY) == mbid) & F.col(scd2.IS_CURRENT))
-               .withColumn("name", F.lit(NEW_NAME))
-               .withColumn(scd2.VALID_FROM, F.lit(split))
-               .withColumn(scd2.VALID_TO, F.lit(scd2.FAR_FUTURE))
-               .withColumn(scd2.IS_CURRENT, F.lit(True))
+            spark.read.format("delta")
+            .option("versionAsOf", before_version).load(dim_path)
+            .filter((F.col(scd2.BUSINESS_KEY) == mbid) & F.col(scd2.IS_CURRENT))
+            .withColumn("name", F.lit(NEW_NAME))
+            .withColumn(scd2.VALID_FROM, F.lit(split))
+            .withColumn(scd2.VALID_TO, F.lit(scd2.FAR_FUTURE))
+            .withColumn(scd2.IS_CURRENT, F.lit(True))
         )
+        added = renamed.count()
+        if added != 1:
+            print(f"새 줄이 {added}개다. 1개여야 한다.")
+            return 1
         renamed.write.format("delta").mode("append").save(dim_path)
 
         # 개명 전후의 청취를 각각 조회한다.
