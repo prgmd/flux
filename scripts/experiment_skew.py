@@ -158,12 +158,16 @@ def main() -> int:
               f"{entry['mart_rows']:>10,}")
 
     # 마트 행 수가 구성마다 다르면 같은 것을 잰 것이 아니다.
-    distinct_rows = {e["mart_rows"] for e in table}
+    # set.pop()은 꺼내면서 **지운다.** 출력문 안에서 부르는 바람에 집합이
+    # 비워져, 대조는 통과했는데 종료코드가 1로 나갔다. 출력에 부작용을
+    # 섞지 않는다.
+    distinct_rows = sorted({e["mart_rows"] for e in table})
+    agreed = len(distinct_rows) == 1
     print()
-    if len(distinct_rows) == 1:
-        print(f"대조 통과 : 네 구성이 같은 결과를 냈다 ({distinct_rows.pop():,}행)")
+    if agreed:
+        print(f"대조 통과 : 네 구성이 같은 결과를 냈다 ({distinct_rows[0]:,}행)")
     else:
-        print(f"대조 실패 : 구성마다 마트 행 수가 다르다 {sorted(distinct_rows)}")
+        print(f"대조 실패 : 구성마다 마트 행 수가 다르다 {distinct_rows}")
 
     config.write_measurement("skew-experiment", {
         "shuffle_partitions": args.shuffle_partitions,
@@ -171,7 +175,7 @@ def main() -> int:
         "runs": results,
         "summary": table,
     })
-    return 0 if len(distinct_rows) == 1 else 1
+    return 0 if agreed else 1
 
 
 if __name__ == "__main__":
