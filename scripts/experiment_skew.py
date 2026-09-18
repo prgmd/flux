@@ -37,7 +37,7 @@ from pyspark.sql import functions as F
 
 from flux.common import config, eventlog
 from flux.common.spark import session as spark_session
-from flux.gold import fact, mart, skew
+from flux.gold import fact, mart, mart_build, skew
 
 
 def event_dir(root: Path, run: str) -> Path:
@@ -66,7 +66,7 @@ def run_once(cfg, rep: int, *, fact_path: str, root: Path,
                           shuffle_partitions=shuffle_partitions, extra=extra)
     started = time.time()
     try:
-        built = mart.build(spark, fact_path, salting=cfg.salting)
+        built = mart_build.build(spark, fact_path, salting=cfg.salting)
         # 집계를 실제로 시키려면 결과를 거둬야 한다. count()는 마지막 단계를
         # 한 줄로 접어 버리므로, 행을 다 만들게 하려고 합계를 함께 낸다.
         totals = built.agg(

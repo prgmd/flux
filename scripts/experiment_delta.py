@@ -41,7 +41,7 @@ from pyspark.sql import functions as F
 
 from flux.common import config, deltalog
 from flux.common.spark import session as spark_session
-from flux.gold import fact, mart
+from flux.gold import fact, mart, mart_build
 
 CODECS = ("snappy", "zstd")
 

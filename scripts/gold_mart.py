@@ -18,7 +18,7 @@ from pyspark.sql import functions as F
 
 from flux.common import config
 from flux.common.spark import session as spark_session
-from flux.gold import fact, mart, scd2
+from flux.gold import fact, mart, mart_build, scd2
 
 
 def main() -> int:
@@ -42,7 +42,7 @@ def main() -> int:
     try:
         # 기법을 걸기 전에 병목이 실재하는지 본다. 없는 병목에 salting을
         # 걸면 소금값만 치르고 얻는 것이 없다.
-        skewness = mart.observe_skew(spark, fact_path)
+        skewness = mart_build.observe_skew(spark, fact_path)
         print("아티스트별 청취 분포")
         print(f"  아티스트   : {skewness['keys']:,}")
         print(f"  청취       : {skewness['total']:,}")
@@ -60,9 +60,9 @@ def main() -> int:
             return 0
 
         print()
-        built = mart.build(spark, fact_path, salting=args.salting)
+        built = mart_build.build(spark, fact_path, salting=args.salting)
         dim = spark.read.format("delta").load(dim_path)
-        named = mart.with_names(built, dim, broadcast=not args.no_broadcast)
+        named = mart_build.with_names(built, dim, broadcast=not args.no_broadcast)
         (
             named.write.format("delta").mode("overwrite")
             .option("overwriteSchema", "true").save(mart_path)

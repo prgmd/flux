@@ -54,7 +54,7 @@ from pyspark.sql import functions as F
 
 from flux.common import config
 from flux.common.spark import master, session as spark_session
-from flux.gold import fact, mart
+from flux.gold import fact, mart, mart_build
 
 PHASES = ("baseline", "killed")
 
@@ -65,7 +65,7 @@ def workload(spark, fact_path: str) -> dict:
     집계를 고른 이유가 있다. 답이 숫자 몇 개라 대조가 쉽고, 셔플이 있어
     중간 결과가 워커에 흩어져 **죽일 것이 실제로 있다.**
     """
-    built = mart.build(spark, fact_path, salting=False)
+    built = mart_build.build(spark, fact_path, salting=False)
     row = built.agg(
         F.count(F.lit(1)).alias("rows"),
         F.sum("listens").alias("listens"),
