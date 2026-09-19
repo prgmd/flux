@@ -227,3 +227,43 @@ def test_zstd로_눌린_것을_읽는다(tmp_path):
     body = "\n".join([task_end(1, 10), task_end(1, 90)]).encode("utf-8")
     (inner / "events_1_local-123.zstd").write_bytes(compress(body))
     assert eventlog.read(tmp_path)["stages"][0].max_over_median == 1.8
+
+
+# ── 큰 단계와 치우친 단계는 다르다 ──────────────────────────
+
+def test_가장_무거운_단계와_가장_치우친_단계가_다를_수_있다():
+    """실물에서 이랬다. 조인 잡의 가장 무거운 단계는 입력 파일을 읽는
+    스캔(569 태스크, 비율 1.09)이고, 스큐는 셔플 뒤 조인 단계에
+    있었다(200 태스크, 비율 4.94).
+
+    총 시간으로 고르면 스캔이 20배 차이로 이긴다. heaviest를 스큐 지표로
+    쓰면 '스큐가 없다'는 틀린 답이 나온다."""
+    scan = [task_end(5, 4000) for _ in range(20)] + [task_end(5, 4400)]
+    join = [task_end(6, 400) for _ in range(20)] + [task_end(6, 2000)]
+    parsed = eventlog.parse(scan + join)
+
+    assert eventlog.heaviest(parsed["stages"]).stage_id == 5
+    assert eventlog.most_skewed(parsed["stages"]).stage_id == 6
+
+
+def test_태스크가_적은_단계는_스큐_후보에서_뺀다():
+    """두세 개짜리 단계는 비율이 잡음으로 튄다. 실물에서 태스크 1개짜리
+    단계가 섞여 있었다."""
+    tiny = [task_end(1, 10), task_end(1, 1000)]
+    real = [task_end(2, 100) for _ in range(20)] + [task_end(2, 200)]
+    parsed = eventlog.parse(tiny + real)
+    assert eventlog.most_skewed(parsed["stages"]).stage_id == 2
+
+
+def test_후보가_없으면_None이다():
+    parsed = eventlog.parse([task_end(1, 10), task_end(1, 20)])
+    assert eventlog.most_skewed(parsed["stages"]) is None
+
+
+def test_요약이_둘을_따로_담는다():
+    scan = [task_end(5, 4000) for _ in range(20)] + [task_end(5, 4400)]
+    join = [task_end(6, 400) for _ in range(20)] + [task_end(6, 2000)]
+    s = eventlog.summary(eventlog.parse(scan + join))
+    assert s["heaviest"]["stage_id"] == 5
+    assert s["most_skewed"]["stage_id"] == 6
+    assert len(s["all_stages"]) == 2
