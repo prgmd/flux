@@ -9,6 +9,7 @@ pyspark를 꼭대기에서 부르지 않는다. 호스트에는 Spark가 없고,
 """
 
 import os
+import socket
 
 DELTA_EXTENSION = "io.delta.sql.DeltaSparkSessionExtension"
 DELTA_CATALOG = "org.apache.spark.sql.delta.catalog.DeltaCatalog"
@@ -36,6 +37,26 @@ def master() -> str:
     return os.environ.get(MASTER_ENV) or DEFAULT_MASTER
 
 
+def _driver_address() -> dict:
+    """클러스터에 붙을 때 워커가 드라이버를 찾아오게 하는 설정.
+
+    **로컬 모드에는 없는 문제다.** 드라이버와 실행기가 같은 프로세스라
+    서로 찾을 일이 없다.
+
+    standalone에서는 워커가 드라이버에 되돌아 붙어야 결과와 셔플 정보를
+    주고받는다. 그런데 컨테이너 안에서 호스트 이름을 물으면 컨테이너 자기
+    이름이 나오고, 그것을 워커가 못 푸는 경우가 있다. 그래서 **IP를 직접**
+    알려준다.
+
+    bindAddress는 0.0.0.0으로 둔다. 드라이버가 어느 인터페이스로 들어오는
+    연결이든 받게 하는 것이고, 컨테이너 네트워크에서는 이게 맞다.
+    """
+    return {
+        "spark.driver.host": socket.gethostbyname(socket.gethostname()),
+        "spark.driver.bindAddress": "0.0.0.0",
+    }
+
+
 def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
             master_url: str | None = None, extra: dict | None = None):
     """Delta 확장이 붙은 세션.
@@ -52,15 +73,20 @@ def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
     from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
 
+    target = master_url or master()
     builder = (
         SparkSession.builder.appName(app_name)
-        .master(master_url or master())
+        .master(target)
         .config("spark.sql.extensions", DELTA_EXTENSION)
         .config("spark.sql.catalog.spark_catalog", DELTA_CATALOG)
         .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
         .config("spark.ui.enabled", "false")
         .config("spark.driver.memory", memory)
     )
-    for key, value in (extra or {}).items():
+    # 클러스터일 때만 드라이버 주소를 잡는다. 로컬 모드에 넣으면 불필요하고,
+    # 기존 측정과 설정이 달라져 재현이 어긋난다.
+    settings = {} if target.startswith("local") else _driver_address()
+    settings.update(extra or {})
+    for key, value in settings.items():
         builder = builder.config(key, value)
     return configure_spark_with_delta_pip(builder).getOrCreate()

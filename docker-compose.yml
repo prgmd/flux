@@ -69,6 +69,15 @@ services:
       - 3g
       - --webui-port
       - "8081"
+    volumes:
+      # 워커가 parquet을 **직접 읽는다.** 드라이버가 읽어 넘겨주는 것이 아니라
+      # 각 워커가 자기 몫의 파일을 연다. 이 마운트가 없으면 잡이 파일을
+      # 못 찾아 죽는다.
+      - ${FLUX_DATA_DIR:-./data}:/data
+      # 순수 DataFrame 연산은 executor에서 JVM이 돌지만, 파이썬 UDF나
+      # 모듈 참조가 끼면 워커에도 flux 패키지가 필요하다. 붙여 두는 값이
+      # 안 붙여서 디버깅하는 값보다 싸다.
+      - ./src:/opt/flux/src:ro
     depends_on:
       spark-master:
         condition: service_healthy
