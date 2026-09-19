@@ -125,3 +125,42 @@ def skewness(counts) -> dict:
         "max_over_median": rows[-1] / median if median else float("inf"),
         "top1_share": rows[-1] / total if total else 0.0,
     }
+
+
+# ── 조인에 소금을 치는 것은 집계와 다르다 ───────────────────
+#
+# 집계는 한쪽만 쪼개면 된다. 나눠 센 뒤 소금을 떼고 더하면 되기 때문이다.
+#
+# **조인은 양쪽이 같은 소금을 갖고 있어야 짝이 맞는다.** 큰 쪽의 어떤 행이
+# `artist_X#7`이 됐는데 작은 쪽에 `artist_X#7`이 없으면 그 행은 짝을 잃는다.
+#
+# 그래서 작은 쪽을 **소금 가짓수만큼 복제한다.** 차원 한 줄이 16줄이 되고,
+# 각 줄이 서로 다른 소금을 단다. 그러면 큰 쪽이 어떤 소금을 받았든 짝이 있다.
+#
+#     팩트   artist_X  →  artist_X#7      (임의의 소금 하나)
+#     차원   artist_X  →  artist_X#0
+#                         artist_X#1
+#                         ...
+#                         artist_X#15     (전부)
+#
+# 복제 비용이 작은 쪽에만 붙으므로 **작은 쪽이 실제로 작아야** 성립한다.
+# 차원이 297만 행이므로 16배면 4,760만 행이다. 팩트 6,060만과 견줄 만해져
+# 이 기법이 공짜가 아니라는 것이 드러난다.
+
+
+def replicas(key: str) -> tuple:
+    """작은 쪽 한 줄이 어떤 소금들로 복제되는가. 전부다.
+
+    큰 쪽이 어떤 소금을 받든 짝이 있어야 하므로 하나도 빠뜨릴 수 없다.
+    """
+    return tuple(salted(key, salt) for salt in range(SALT_BUCKETS))
+
+
+def join_pairs(left_key: str, left_salt: int, right_key: str) -> list:
+    """소금 친 조인에서 이 두 행이 만나는가.
+
+    큰 쪽은 소금 하나를 받고, 작은 쪽은 전부로 복제된다. 같은 키라면
+    **정확히 한 번** 만나야 한다. 두 번 만나면 조인이 행을 불린다.
+    """
+    left = salted(left_key, left_salt)
+    return [r for r in replicas(right_key) if r == left]

@@ -131,3 +131,42 @@ def test_짝수_개수면_가운데_둘의_평균이다():
 def test_빈_입력은_거부한다():
     with pytest.raises(ValueError):
         skew.skewness([])
+
+
+# ── 조인에 소금을 치는 것 ───────────────────────────────────
+
+OTHER = "83d91898-7763-47d7-b03b-b92132375c47"
+
+
+def test_작은_쪽은_소금_전부로_복제된다():
+    """큰 쪽이 어떤 소금을 받든 짝이 있어야 한다. 하나라도 빠뜨리면
+    그 소금을 받은 행이 조인에서 사라진다."""
+    assert len(skew.replicas(KEY)) == skew.SALT_BUCKETS
+
+
+def test_복제본이_서로_다르다():
+    assert len(set(skew.replicas(KEY))) == skew.SALT_BUCKETS
+
+
+def test_같은_키는_정확히_한_번_만난다():
+    """두 번 만나면 조인이 행을 불린다. 집계와 달리 조인은 행 수가
+    바뀌면 안 된다."""
+    for salt in range(skew.SALT_BUCKETS):
+        assert len(skew.join_pairs(KEY, salt, KEY)) == 1
+
+
+def test_다른_키는_안_만난다():
+    for salt in range(skew.SALT_BUCKETS):
+        assert skew.join_pairs(KEY, salt, OTHER) == []
+
+
+def test_소금을_떼면_복제본이_전부_원래_키다():
+    """2단계가 없어도 되지만, 결과에서 소금을 벗겨 내려면 필요하다."""
+    assert {skew.unsalted(r) for r in skew.replicas(KEY)} == {KEY}
+
+
+def test_복제가_공짜가_아니라는_것이_수에_드러난다():
+    """차원 297만 행이 16배면 4,760만이다. 팩트 6,060만과 견줄 만해진다.
+    작은 쪽이 실제로 작아야 이 기법이 성립한다."""
+    dim_rows = 2_976_554
+    assert dim_rows * skew.SALT_BUCKETS > 40_000_000

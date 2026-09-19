@@ -37,7 +37,7 @@ from pyspark.sql import functions as F
 
 from flux.common import config, eventlog
 from flux.common.spark import session as spark_session
-from flux.gold import fact, mart, mart_build, skew
+from flux.gold import fact, mart_build, scd2, skew
 
 
 def event_dir(root: Path, run: str) -> Path:
@@ -48,7 +48,7 @@ def event_dir(root: Path, run: str) -> Path:
     return path
 
 
-def run_once(cfg, rep: int, *, fact_path: str, root: Path,
+def run_once(cfg, rep: int, *, fact_path: str, dim_path: str, root: Path,
              shuffle_partitions: int) -> dict:
     """구성 하나를 한 번 돌리고 수치를 거둔다.
 
@@ -66,12 +66,17 @@ def run_once(cfg, rep: int, *, fact_path: str, root: Path,
                           shuffle_partitions=shuffle_partitions, extra=extra)
     started = time.time()
     try:
-        built = mart_build.build(spark, fact_path, salting=cfg.salting)
-        # 집계를 실제로 시키려면 결과를 거둬야 한다. count()는 마지막 단계를
-        # 한 줄로 접어 버리므로, 행을 다 만들게 하려고 합계를 함께 낸다.
+        # **재는 것은 조인이다.** groupBy는 셔플 전에 부분 집계로 접혀
+        # 스큐가 셔플에 도달하지 않는다
+        # (docs/measurements/2026-09-19-physical-plans.md).
+        dim = spark.read.format("delta").load(dim_path)
+        built = mart_build.join_for_experiment(
+            spark, fact_path, dim, salting=cfg.salting)
+        # 조인을 실제로 시키려면 결과를 거둬야 한다. 행 수와 이름이 붙은 수를
+        # 함께 세어 구성끼리 같은 것을 냈는지 대조한다.
         totals = built.agg(
             F.count(F.lit(1)).alias("rows"),
-            F.sum("listens").alias("listens"),
+            F.sum(F.col("name").isNotNull().cast("long")).alias("listens"),
         ).first()
         elapsed = time.time() - started
     finally:
@@ -105,6 +110,7 @@ def main() -> int:
     args = parser.parse_args()
 
     fact_path = config.gold(fact.TABLE_NAME)
+    dim_path = config.gold(scd2.TABLE_NAME)
     root = config.local_root()
     configs = [skew.config(args.only)] if args.only else list(skew.CONFIGS)
 
@@ -118,7 +124,8 @@ def main() -> int:
     # 회차를 바깥에 둔다. 구성을 바깥에 두면 캐시가 뒤 구성에 유리해진다.
     for rep in range(1, args.repeats + 1):
         for cfg in configs:
-            row = run_once(cfg, rep, fact_path=fact_path, root=root,
+            row = run_once(cfg, rep, fact_path=fact_path, dim_path=dim_path,
+                           root=root,
                            shuffle_partitions=args.shuffle_partitions)
             results.append(row)
             top = row.get("heaviest") or {}
@@ -149,6 +156,7 @@ def main() -> int:
             "shuffle_read_bytes": rows[0]["shuffle_read_bytes"],
             "shuffle_write_bytes": rows[0]["shuffle_write_bytes"],
             "mart_rows": rows[0]["mart_rows"],
+            "listens": rows[0]["listens"],
         }
         table.append(entry)
         print(f"{cfg.name:12} {entry['wall_median']:8.1f}초 "
@@ -162,12 +170,14 @@ def main() -> int:
     # 비워져, 대조는 통과했는데 종료코드가 1로 나갔다. 출력에 부작용을
     # 섞지 않는다.
     distinct_rows = sorted({e["mart_rows"] for e in table})
-    agreed = len(distinct_rows) == 1
+    distinct_named = sorted({e["listens"] for e in table})
+    agreed = len(distinct_rows) == 1 and len(distinct_named) == 1
     print()
     if agreed:
-        print(f"대조 통과 : 네 구성이 같은 결과를 냈다 ({distinct_rows[0]:,}행)")
+        print(f"대조 통과 : 네 구성이 같은 결과를 냈다 "
+              f"({distinct_rows[0]:,}행, 이름 붙음 {distinct_named[0]:,})")
     else:
-        print(f"대조 실패 : 구성마다 마트 행 수가 다르다 {distinct_rows}")
+        print(f"대조 실패 : 행 수 {distinct_rows}, 이름 붙은 수 {distinct_named}")
 
     config.write_measurement("skew-experiment", {
         "shuffle_partitions": args.shuffle_partitions,

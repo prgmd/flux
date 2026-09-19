@@ -146,3 +146,65 @@ def observe_skew(spark: SparkSession, fact_path: str, *, top: int = 10) -> dict:
         "top": [{"artist_mbid": r["artist_mbid"], "listens": r["count"]}
                 for r in head],
     }
+
+
+# ── 스큐 실험이 재는 작업 ───────────────────────────────────
+#
+# 마트를 만드는 groupBy는 셔플 전에 부분 집계로 접히므로 스큐가 셔플에
+# 도달하지 않는다(docs/measurements/2026-09-19-physical-plans.md).
+#
+# 조인은 접을 것이 없다. 같은 키의 행을 한 곳에 모아야 하기 때문이다.
+# 팩트 6,060만 행 중 BTS가 300만인데, 그 300만이 한 파티션에 통째로 간다.
+
+
+def join_plain(spark: SparkSession, fact_path: str, dim: DataFrame) -> DataFrame:
+    """팩트를 차원에 그대로 조인한다. 스큐가 드러나는 경로다.
+
+    브로드캐스트를 강제하지 않는다. 강제하면 셔플이 없어 스큐도 없다.
+    실제로 차원이 커서 임계값을 넘으므로 Spark가 셔플 조인을 고른다.
+    """
+    return (
+        _listens(spark, fact_path)
+        .join(dim.select(scd2.BUSINESS_KEY, "name"),
+              on=scd2.BUSINESS_KEY, how="left")
+    )
+
+
+def join_salted(spark: SparkSession, fact_path: str,
+                dim: DataFrame) -> DataFrame:
+    """조인 양쪽에 소금을 친다.
+
+    큰 쪽(팩트)은 임의의 소금 **하나**를 받고, 작은 쪽(차원)은 소금 가짓수만큼
+    **전부로 복제**된다. 그래야 큰 쪽이 어떤 소금을 받든 짝이 있다.
+
+    집계와 다른 점이 여기다. 집계는 한쪽만 쪼개고 나중에 더하면 되지만,
+    조인은 **양쪽이 같은 소금을 갖고 있어야 만난다.**
+
+    복제 비용은 작은 쪽에만 붙는다. 다만 차원이 297만 행이라 16배면 4,760만이
+    되어 팩트 6,060만과 견줄 만해진다. **이 기법이 공짜가 아니라는 것이
+    여기서 드러난다.**
+
+    결과의 행 수는 소금 없는 조인과 같아야 한다. 같은 키가 정확히 한 번만
+    만나기 때문이다(flux.gold.skew.join_pairs).
+    """
+    salt = (F.rand() * skew.SALT_BUCKETS).cast("int")
+    left = (
+        _listens(spark, fact_path)
+        .withColumn("_sk", F.concat(F.col(scd2.BUSINESS_KEY),
+                                    F.lit(skew.SALT_SEPARATOR), salt))
+    )
+    right = (
+        dim.select(scd2.BUSINESS_KEY, "name")
+        .withColumn("_salt", F.explode(
+            F.sequence(F.lit(0), F.lit(skew.SALT_BUCKETS - 1))))
+        .withColumn("_sk", F.concat(F.col(scd2.BUSINESS_KEY),
+                                    F.lit(skew.SALT_SEPARATOR),
+                                    F.col("_salt")))
+        .drop(scd2.BUSINESS_KEY, "_salt")
+    )
+    return left.join(right, on="_sk", how="left").drop("_sk")
+
+
+def join_for_experiment(spark: SparkSession, fact_path: str, dim: DataFrame,
+                        *, salting: bool) -> DataFrame:
+    return (join_salted if salting else join_plain)(spark, fact_path, dim)
