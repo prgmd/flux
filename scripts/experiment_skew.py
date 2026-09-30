@@ -36,6 +36,7 @@ from pathlib import Path
 from pyspark.sql import functions as F
 
 from flux.common import config, eventlog
+from flux.common.spark import master as spark_master
 from flux.common.spark import session as spark_session
 from flux.gold import fact, mart_build, scd2, skew
 
@@ -107,17 +108,23 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=skew.REPEATS)
     parser.add_argument("--only", default=None,
                         help="구성 하나만 돌린다. 디버깅용")
+    parser.add_argument("--out", default="skew-experiment",
+                        help="실측 파일 이름. 로컬과 클러스터 결과가 "
+                             "서로 덮어쓰지 않게 나눈다")
     args = parser.parse_args()
 
     fact_path = config.gold(fact.TABLE_NAME)
     dim_path = config.gold(scd2.TABLE_NAME)
     root = config.local_root()
+    master = spark_master()
     configs = [skew.config(args.only)] if args.only else list(skew.CONFIGS)
 
     print("구성")
     for c in configs:
         print(f"  {c.name:10} {c.label}")
     print(f"회차 {args.repeats}회, 총 {len(configs) * args.repeats}런")
+    print(f"마스터 {master}, 셔플 파티션 {args.shuffle_partitions}")
+    print(f"실측 파일 {args.out}")
     print()
 
     results = []
@@ -128,10 +135,10 @@ def main() -> int:
                            root=root,
                            shuffle_partitions=args.shuffle_partitions)
             results.append(row)
-            top = row.get("heaviest") or {}
+            skewed = row.get("most_skewed") or {}
             print(f"  {rep}회차 {cfg.name:10} "
                   f"{row['wall_seconds']:7.1f}초  "
-                  f"최장/중앙 {top.get('max_over_median', 0):6.2f}  "
+                  f"최장/중앙 {skewed.get('max_over_median', 0):6.2f}  "
                   f"셔플 w {row['shuffle_write_bytes'] / 1e9:6.2f}GB")
 
     print()
@@ -143,7 +150,7 @@ def main() -> int:
         if not rows:
             continue
         walls = sorted(r["wall_seconds"] for r in rows)
-        ratios = [(r.get("heaviest") or {}).get("max_over_median", 0)
+        ratios = [(r.get("most_skewed") or {}).get("max_over_median", 0)
                   for r in rows]
         entry = {
             "config": cfg.name,
@@ -179,7 +186,8 @@ def main() -> int:
     else:
         print(f"대조 실패 : 행 수 {distinct_rows}, 이름 붙은 수 {distinct_named}")
 
-    config.write_measurement("skew-experiment", {
+    config.write_measurement(args.out, {
+        "master": master,
         "shuffle_partitions": args.shuffle_partitions,
         "repeats": args.repeats,
         "runs": results,

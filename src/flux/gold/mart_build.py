@@ -17,16 +17,24 @@ from pyspark.sql import functions as F
 from flux.gold import fact, mart, scd2, skew
 
 
-def _listens(spark: SparkSession, fact_path: str) -> DataFrame:
+def _listens(spark: SparkSession, fact_path: str,
+             months: list | None = None) -> DataFrame:
     """집계에 쓸 팩트. 아티스트를 모르는 줄은 뺀다.
 
     `artist_mbid`가 NULL인 줄이 60%다. 아티스트별 집계에서 그것들은
     한 아티스트가 아니라 **아티스트가 없는 청취**이므로 묶을 대상이 아니다.
     빼지 않으면 NULL 하나가 9천만 줄짜리 최대 파티션이 되어, 재려는 스큐가
     실제 인기 편중이 아니라 결측 때문이 된다.
+
+    `months`는 사전 확인용이다. 비싼 실험을 돌리기 전에 **같은 코드 경로**를
+    한두 달치로만 태워 본다. 파티션 컬럼은 `select`에서 빠지므로, 거르려면
+    빠지기 전인 여기서 걸어야 파티션 프루닝이 듣는다.
     """
+    frame = spark.read.format("delta").load(fact_path)
+    if months:
+        frame = frame.filter(F.col(fact.PARTITION_COLUMN).isin(months))
     return (
-        spark.read.format("delta").load(fact_path)
+        frame
         .filter(F.col("artist_mbid").isNotNull())
         .select("artist_mbid", "listened_at", *fact.LISTEN_KEY)
     )
@@ -157,21 +165,22 @@ def observe_skew(spark: SparkSession, fact_path: str, *, top: int = 10) -> dict:
 # 팩트 6,060만 행 중 BTS가 300만인데, 그 300만이 한 파티션에 통째로 간다.
 
 
-def join_plain(spark: SparkSession, fact_path: str, dim: DataFrame) -> DataFrame:
+def join_plain(spark: SparkSession, fact_path: str, dim: DataFrame,
+               months: list | None = None) -> DataFrame:
     """팩트를 차원에 그대로 조인한다. 스큐가 드러나는 경로다.
 
     브로드캐스트를 강제하지 않는다. 강제하면 셔플이 없어 스큐도 없다.
     실제로 차원이 커서 임계값을 넘으므로 Spark가 셔플 조인을 고른다.
     """
     return (
-        _listens(spark, fact_path)
+        _listens(spark, fact_path, months)
         .join(dim.select(scd2.BUSINESS_KEY, "name"),
               on=scd2.BUSINESS_KEY, how="left")
     )
 
 
-def join_salted(spark: SparkSession, fact_path: str,
-                dim: DataFrame) -> DataFrame:
+def join_salted(spark: SparkSession, fact_path: str, dim: DataFrame,
+                months: list | None = None) -> DataFrame:
     """조인 양쪽에 소금을 친다.
 
     큰 쪽(팩트)은 임의의 소금 **하나**를 받고, 작은 쪽(차원)은 소금 가짓수만큼
@@ -189,7 +198,7 @@ def join_salted(spark: SparkSession, fact_path: str,
     """
     salt = (F.rand() * skew.SALT_BUCKETS).cast("int")
     left = (
-        _listens(spark, fact_path)
+        _listens(spark, fact_path, months)
         .withColumn("_sk", F.concat(F.col(scd2.BUSINESS_KEY),
                                     F.lit(skew.SALT_SEPARATOR), salt))
     )
@@ -206,5 +215,7 @@ def join_salted(spark: SparkSession, fact_path: str,
 
 
 def join_for_experiment(spark: SparkSession, fact_path: str, dim: DataFrame,
-                        *, salting: bool) -> DataFrame:
-    return (join_salted if salting else join_plain)(spark, fact_path, dim)
+                        *, salting: bool,
+                        months: list | None = None) -> DataFrame:
+    return (join_salted if salting else join_plain)(
+        spark, fact_path, dim, months)

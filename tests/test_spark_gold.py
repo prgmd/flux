@@ -19,7 +19,7 @@ import pytest
 pytest.importorskip("pyspark", reason="Spark 없이 도는 환경이다")
 pytest.importorskip("delta", reason="delta-spark가 없다")
 
-from flux.gold import dim_artist, fact, fact_listens, scd2
+from flux.gold import dim_artist, fact, fact_listens, mart_build, scd2
 
 pytestmark = pytest.mark.spark
 
@@ -460,3 +460,79 @@ def test_placeholder를_닫으면_과거_청취에_거짓_이력이_남는다(sp
     earlier = fact_listens.with_artist_name(
         listens, spark.read.format("delta").load(path))
     assert fact.is_placeholder(earlier.first()["artist_name"])
+
+
+# ── 사전 확인용 월 제한 ──────────────────────────────────────
+
+FACT_SCHEMA = ("artist_mbid string, listened_at timestamp, "
+               "_source_dump string, _record_id long, listened_month string")
+
+
+def _fact_path(spark, warehouse, rows):
+    path = warehouse("gold", fact.TABLE_NAME)
+    (spark.createDataFrame(rows, FACT_SCHEMA)
+     .write.format("delta").mode("overwrite")
+     .partitionBy(fact.PARTITION_COLUMN).save(path))
+    return path
+
+
+def _row(mbid, month, day, record_id):
+    return (mbid, datetime(2026, int(month[-2:]), day, tzinfo=timezone.utc),
+            "d1", record_id, month)
+
+
+def test_월을_제한하면_그_달만_조인된다(spark, warehouse):
+    """비싼 실험 앞에 같은 코드 경로를 짧게 태우기 위한 제한이다.
+
+    `_listens`가 파티션 컬럼을 `select`에서 떨어뜨리므로 조인 뒤에는 거를
+    자리가 없다. 떨어지기 전에 걸어야 파티션 프루닝도 같이 듣는다.
+    """
+    fact_path = _fact_path(spark, warehouse, [
+        _row(MBID_A, "2026-08", 3, 1),
+        _row(MBID_A, "2026-09", 4, 2),
+        _row(MBID_B, "2026-09", 5, 3),
+    ])
+    dim = spark.read.format("delta").load(
+        _create(spark, warehouse, [_artist(MBID_A, "가수"),
+                                   _artist(MBID_B, "밴드")], at="2026-08-01"))
+
+    limited = mart_build.join_for_experiment(
+        spark, fact_path, dim, salting=False, months=["2026-09"])
+    assert limited.count() == 2
+    assert {r["_record_id"] for r in limited.collect()} == {2, 3}
+
+
+def test_월_제한이_조인_결과를_바꾸지_않는다(spark, warehouse):
+    """제한은 읽는 양만 줄여야 한다. 짝짓기 규칙까지 바뀌면 사전 확인이
+    본 실행을 대변하지 못한다."""
+    rows = [_row(MBID_A, "2026-08", 3, 1),
+            _row(MBID_A, "2026-09", 4, 2),
+            _row(MBID_B, "2026-09", 5, 3)]
+    fact_path = _fact_path(spark, warehouse, rows)
+    dim = spark.read.format("delta").load(
+        _create(spark, warehouse, [_artist(MBID_A, "가수"),
+                                   _artist(MBID_B, "밴드")], at="2026-08-01"))
+
+    whole = mart_build.join_for_experiment(spark, fact_path, dim, salting=False)
+    expected = {(r["_record_id"], r["name"])
+                for r in whole.collect() if r["_record_id"] in (2, 3)}
+    limited = mart_build.join_for_experiment(
+        spark, fact_path, dim, salting=False, months=["2026-09"])
+    assert {(r["_record_id"], r["name"]) for r in limited.collect()} == expected
+
+
+def test_소금_경로도_월_제한을_받는다(spark, warehouse):
+    """소금 경로만 제한이 안 걸리면 사전 확인에서 두 변형의 크기가 달라진다."""
+    fact_path = _fact_path(spark, warehouse, [
+        _row(MBID_A, "2026-08", 3, 1),
+        _row(MBID_A, "2026-09", 4, 2),
+        _row(MBID_B, "2026-09", 5, 3),
+    ])
+    dim = spark.read.format("delta").load(
+        _create(spark, warehouse, [_artist(MBID_A, "가수"),
+                                   _artist(MBID_B, "밴드")], at="2026-08-01"))
+
+    salted = mart_build.join_for_experiment(
+        spark, fact_path, dim, salting=True, months=["2026-09"])
+    assert salted.count() == 2
+    assert {r["_record_id"] for r in salted.collect()} == {2, 3}
