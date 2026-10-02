@@ -67,11 +67,18 @@ docker build -t flux-spark -f docker/spark.Dockerfile .
 docker run ... -v "$PWD/src:/opt/flux/src:ro" ...
 ```
 
-Git Bash에서는 이 마운트가 걸리지 않는다. MSYS가 오른쪽의 `/opt/flux/src`를
-`C:\Program Files\Git\opt\flux\src`로 바꿔 버린다. 마운트는 엉뚱한 자리에 걸리고
-`/opt/flux/src`는 이미지 사본으로 남는다. `/data`는 구성 요소가 하나라 변환을
-피해서, 데이터는 제대로 읽히고 코드만 옛것이 된다. 명령줄에 마운트가 적혀 있으니
-눈으로는 통과한다.
+Git Bash에서는 이 마운트가 걸리지 않는다. `$PWD`가 `/c/Users/...` 같은 POSIX 경로를
+내고, MSYS는 POSIX 경로로 시작하는 `:` 구분 인자를 **경로 목록**으로 보고 원소마다
+윈도우 경로로 바꾼다. 오른쪽의 `/opt/flux/src`도 `C:\Program Files\Git\opt\flux\src`가
+되어, 마운트는 엉뚱한 자리에 걸리고 `/opt/flux/src`는 이미지 사본으로 남는다.
+
+데이터 마운트는 왼쪽을 `C:/...`처럼 윈도우 경로로 적어 왔다. MSYS는 그런 인자를
+건드리지 않으므로 데이터는 제대로 읽히고 코드만 옛것이 됐다. 한 명령 안에서 한
+마운트는 걸리고 한 마운트는 빗나가니, 명령줄을 눈으로 훑어서는 알 수 없다.
+
+갈라서 확인했다(2026-10-02). 왼쪽 `C:/...`에 오른쪽 `/opt/flux/src`는 걸리고, 왼쪽
+`/c/...`에 오른쪽 `/data`는 빗나간다. 오른쪽 경로의 깊이가 아니라 **왼쪽의 형식**이
+가른다.
 
 래퍼는 `MSYS_NO_PATHCONV=1`로 변환을 끄고, 지문 대조로 다른 원인까지 막는다.
 
