@@ -23,7 +23,8 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | **Silver** | `listens_normalized` | MBID 우선순위 해석, 클라이언트 식별, 중복 제거, 품질 격리 |
 | | `invalid_listens` | 품질 규칙 위반 격리 테이블 |
 | **Gold** | `dim_artist` | 아티스트 차원. SCD Type 2로 개명 이력 보존 |
-| | `fact_listens` | 청취 팩트. 아티스트 단위로 펼친 스타 스키마 (적재 검증 중) |
+| | `fact_listens` | 청취 팩트. 청취 하나와 아티스트 하나의 쌍이 한 행인 스타 스키마 |
+| | `mart_daily_artist` | 일별 아티스트 청취 집계. 그날 유효했던 이름을 시점 조인으로 붙인다 |
 
 파티션은 Silver, Gold 모두 `listened_month`입니다. 명세는 `listened_date`였으나 청취 날짜가 7,877개로 흩어져 조각의 99.5%가 10만 행 미만이 되는 것을 실측하고 달 단위로 바꿨습니다.
 
@@ -37,7 +38,7 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | S1 | 덤프 수급 (체크섬 검증, 이어받기, 매니페스트) | 완료 |
 | S2 | Bronze 적재 | 완료 |
 | S3 | Silver 정제와 SCD Type 2 | 완료 |
-| S4 | Gold 마트와 스큐 실험 | 진행 중 |
+| S4 | Gold 마트와 스큐 실험 | 완료 |
 | S5 | PostgreSQL 서빙과 FastAPI | 예정 |
 | S6 | Airflow 통합과 운영 마감 | 예정 |
 
@@ -54,11 +55,26 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | 중복 제거 | 4,521,025행 (2.90%) |
 | 품질 격리 | 0행 |
 | `dim_artist` | 2,976,554 아티스트 + placeholder 661 |
+| `fact_listens` | 151,800,271행 (청취당 아티스트 1.0040) |
+| `mart_daily_artist` | 14,792,567행 |
 | 파티션 (달) | 260개 |
 
 중복 제거로 지워진 행 중 MBID 보유는 36.26%지만 그 99.6%가 `LASTFM` 출처이고, ListenBrainz가 직접 해석한 `MAPPING` 출처는 한 건도 지워지지 않았습니다. 정렬의 첫 키가 출처 순위이므로 남은 행이 언제나 그 그룹에서 가장 좋은 출처를 갖습니다.
 
 청취에 실제로 쓰인 아티스트는 311,929명으로 차원의 10.5%이며, 그중 661명(0.21%)이 차원에 없어 placeholder로 처리합니다. 청취 기록과 MusicBrainz 덤프의 시점이 다르기 때문입니다.
+
+### S4 실험
+
+로컬은 `local[*]` 20코어, 클러스터는 standalone 워커 3개(실행기당 2코어 1g)입니다. 수치는 Spark 이벤트 로그에서 꺼냈고, 실험마다 최종 물리 계획을 함께 남깁니다.
+
+| 실험 | 결과 | 문서 |
+|---|---|---|
+| AQE off / on / Salting / 둘 다 (조인, 로컬과 클러스터 각 12런) | BTS 한 아티스트의 파티션이 행으로 중앙의 11.25배지만, 그 태스크(2.2초)가 조인 단계(4.9초)보다 짧아 시간을 잡아먹지 않았습니다. AQE는 스큐 조인을 한 번도 하지 않았고(압축된 바이트로는 1.74배라 판정 조건 미달) 파티션만 합쳤습니다. Salting은 편중을 1.38배로 없앴지만 차원 16배 복제로 조인 단계가 두 배가 됐습니다 | [skew-cluster](docs/measurements/2026-10-02-skew-cluster.md) |
+| 셔플 파티션 수 24 / 48 / 96 / 192 | 파티션이 적을수록 최장/중앙은 작아지고(행 2.27에서 11.43, 실행 전 계산과 일치), 가장 긴 태스크는 2.7초에서 8.2초로 길어져 단계 끝을 붙잡습니다 | [partitions](docs/measurements/2026-10-02-partitions.md) |
+| broadcast / shuffle / 차원 선필터 | 시간은 같았습니다(12.0~12.9초). broadcast는 셔플 496MB를 없애고 저장 메모리 948MB, shuffle은 정렬에 2.06GB, 쓰이는 키로 차원을 먼저 거르면 셔플 94MB와 메모리 0.57GB로 가장 가볍습니다 | [broadcast](docs/measurements/2026-10-02-broadcast.md) |
+| 워커 1개 강제 종료 (클러스터) | 첫 셔플이 끝난 뒤 워커를 죽였습니다. 잃은 맵 출력 569개 중 190개만 다시 만들었고 결과 네 값이 기준선과 일치했습니다. 소요 1.49배 | [worker-kill](docs/measurements/2026-10-02-worker-kill.md) |
+| Z-Order, OPTIMIZE, 압축 코덱 | Z-Order로 마트 612.7MB가 112.6MB(5.4배), 필터 조회 3.2배. 주된 이유는 정렬이 Parquet 압축을 살린 것입니다. OPTIMIZE 단독은 효과가 없었고 zstd가 snappy보다 48% 작았습니다 | [delta-layout](docs/measurements/2026-09-19-delta-layout.md) |
+| Delta MERGE 대 Parquet 재작성 (SCD2) | 1명 갱신에 쓰기 21.5배 감소. 바뀌는 아티스트가 100명부터는 이득이 사라집니다 | [merge-vs-parquet](docs/measurements/2026-09-19-merge-vs-parquet.md) |
 
 ---
 
@@ -72,13 +88,16 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 - **MERGE 원자성**: 병합 도중 강제 종료. 2단계 MERGE는 반쪽 상태를 남겨 **게이트를 통과하지 못했고**, 한 문장으로 합쳐 다시 확인
 - **결정성**: 입력 순서를 순열로 바꿔도 중복 제거 결과가 같은 것을 확인
 - **교차 대조**: `groupBy`와 윈도우 함수 두 경로로 센 중복 제거 결과가 일치
+- **정합성 오라클**: Spark가 만든 마트를 DuckDB로 한 주 다시 세어 7일 전부 일치
+- **시점 조인**: 개명을 주입하고 개명 전 청취는 옛 이름, 뒤 청취는 새 이름으로 조회되는 것을 확인
+- **워커 강제 종료**: 클러스터에서 셔플 도중 워커를 죽이고, 이벤트 로그로 재계산을 확인한 뒤 결과를 기준선과 대조
 
 테스트는 두 층입니다.
 
 | 층 | 개수 | 어디서 | 무엇을 |
 |---|---:|---|---|
-| 판단 | 466 | 호스트, 3초 | 무엇이 바뀌면 새 버전인가, 어느 줄을 남기는가 |
-| 번역 | 54 | 컨테이너, `-m spark` | 판단 모듈과 Spark 잡이 같은 규칙을 쓰는가 |
+| 판단 | 581 | 호스트, 3초 | 무엇이 바뀌면 새 버전인가, 어느 줄을 남기는가 |
+| 번역 | 60 | 컨테이너, `-m spark` | 판단 모듈과 Spark 잡이 같은 규칙을 쓰는가 |
 
 판단이 Spark 없이 도는 것은 그것을 pyspark를 부르지 않는 모듈로 분리했기 때문입니다.
 
@@ -86,7 +105,7 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 
 번역 층은 호스트에서 돌지 않습니다. Spark 4.x가 JDK 17+를 요구하고 호스트에는 없어 건너뛰기로 처리되며, `flux-spark` 이미지 안에서만 돕니다.
 
-번역 층 54개에 **4분 29초 ~ 6분 09초**가 걸립니다(4회 실측). 병목은 JVM 기동(38초, 1회)이 아니라 Delta입니다 — 차원을 만들고 `MERGE`하는 Gold 테스트가 수십 행에도 각 13~22초입니다. 판단 층이 3초인 이유가 여기서 드러납니다. 판단을 pyspark 밖으로 뺀 것이 100배의 차이입니다.
+번역 층 60개에 **4분 15초**가 걸립니다(2026-10-02. 9월에는 54개에 4분 29초 ~ 6분 09초, 4회 실측). 병목은 JVM 기동(38초, 1회)이 아니라 Delta입니다 — 차원을 만들고 `MERGE`하는 Gold 테스트가 수십 행에도 각 13~22초입니다. 판단 층이 3초인 이유가 여기서 드러납니다. 판단을 pyspark 밖으로 뺀 것이 100배의 차이입니다.
 
 실행 방법은 [docs/running.md](docs/running.md)에 있습니다.
 
@@ -101,11 +120,12 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 - Delta Lake `MERGE INTO`로 SCD Type 2 이력 관리. 닫기와 열기를 한 문장으로 처리해 원자성 확보
 - 시점 범위 조인으로 과거 청취를 당시 아티스트 이름에 연결
 - Delta Lake time travel을 실험 후 복원과 백필 검증에 활용
+- AQE와 Salting 4단계 스큐 비교 실험을 로컬과 Spark standalone 클러스터에서 실측
+- Spark 이벤트 로그에서 태스크별 시간과 읽은 행 수, 셔플, 실행기 메모리, 최종 물리 계획을 수집
+- 워커 강제 종료로 계보 기반 재계산과 결과 정합성 확인
 
 **예정**
 
-- Data Skew 병목 극복을 위한 Salting 기법 적용
-- AQE 제어 4단계 비교 실험과 수치 실측
 - PostgreSQL 서빙 마트와 FastAPI 기반 조회 API
 - Airflow DAG 통합
 
