@@ -13,26 +13,32 @@
 ACTIVE = "ACTIVE"
 COMPLETE = "COMPLETE"
 
+# Delta는 테이블을 읽기 전에 트랜잭션 로그로 살아 있는 파일 목록을 다시 만드는데,
+# 그 일도 셔플을 쓴다(이 데이터에서 약 21MB). 본 작업의 첫 셔플은 수백 MB다.
+# 하한이 없으면 본 작업이 시작하기도 전에 장부 단계 뒤에서 죽이게 된다.
+MIN_SHUFFLE_BYTES = 100_000_000
 
-def finished_shuffle_maps(stages) -> list:
-    """셔플 출력을 남기고 끝난 단계들.
+
+def finished_shuffle_maps(stages, min_bytes: int = MIN_SHUFFLE_BYTES) -> list:
+    """셔플 출력을 충분히 남기고 끝난 단계들.
 
     이 단계들의 출력은 그것을 쓴 실행기의 디스크에 있다. 이게 있어야 실행기를
     죽였을 때 **이미 끝난 일을 잃는다.**
     """
     return sorted(s["stageId"] for s in stages
                   if s.get("status") == COMPLETE
-                  and s.get("shuffleWriteBytes", 0) > 0)
+                  and s.get("shuffleWriteBytes", 0) >= min_bytes)
 
 
 def running(stages) -> list:
     return sorted(s["stageId"] for s in stages if s.get("status") == ACTIVE)
 
 
-def ready_to_kill(stages) -> bool:
+def ready_to_kill(stages, min_bytes: int = MIN_SHUFFLE_BYTES) -> bool:
     """지금 죽이면 계보로 다시 만드는 장면이 나오는가.
 
     둘 다 있어야 한다. 끝난 셔플 단계가 없으면 잃을 출력이 없고, 도는 단계가
     없으면 잡이 이미 끝났거나 아직 시작하지 않았다.
     """
-    return bool(finished_shuffle_maps(stages)) and bool(running(stages))
+    return (bool(finished_shuffle_maps(stages, min_bytes))
+            and bool(running(stages)))
