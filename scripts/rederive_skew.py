@@ -17,9 +17,18 @@
 
 **큰 단계와 치우친 단계가 다르다.**
 
-    venv/Scripts/python scripts/rederive_skew.py
+## 두 번째로 다시 뽑는 이유
+
+그래서 "가장 치우친 단계"로 바꿨는데, 이번엔 Delta 트랜잭션 로그를 읽는 장부
+단계가 이겼다. 50 태스크에 셔플 21.7MB뿐이라 태스크 하나만 늦어도 비율이 튄다.
+로컬 aqe_on 세 런과 both 한 런이 그 단계의 값이었다. 지금은 **셔플을 가장 많이
+읽는 단계**를 본다(flux.common.eventlog.join_stage).
+
+    PYTHONPATH=src venv/Scripts/python scripts/rederive_skew.py \
+        --logs eventlogs-local --out skew-rederived-local
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -28,8 +37,14 @@ from flux.gold import skew
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--logs", default="eventlogs",
+                        help="데이터 루트 아래 이벤트 로그 디렉터리")
+    parser.add_argument("--out", default="skew-rederived")
+    args = parser.parse_args()
+
     root = config.local_root()
-    logs = root / "eventlogs"
+    logs = root / args.logs
     if not logs.is_dir():
         print(f"이벤트 로그가 없다: {logs}")
         return 1
@@ -52,9 +67,9 @@ def main() -> int:
         return 1
 
     print(f"{'구성':11} {'회차':>3} {'무거운단계':>10} {'그 비율':>8} "
-          f"{'치우친단계':>10} {'태스크':>7} {'그 비율':>8} {'셔플write':>11}")
+          f"{'조인단계':>10} {'태스크':>7} {'그 비율':>8} {'셔플write':>11}")
     for r in rows:
-        h, s = r["heaviest"] or {}, r["most_skewed"] or {}
+        h, s = r["heaviest"] or {}, r["join_stage"] or {}
         print(f"{r['config']:11} {r['repeat']:>3} "
               f"{h.get('stage_id', '-'):>10} {h.get('max_over_median', 0):>8.2f} "
               f"{s.get('stage_id', '-'):>10} {s.get('tasks', 0):>7,} "
@@ -68,7 +83,7 @@ def main() -> int:
         mine = [r for r in rows if r["config"] == cfg.name]
         if not mine:
             continue
-        ratios = sorted((r["most_skewed"] or {}).get("max_over_median", 0)
+        ratios = sorted((r["join_stage"] or {}).get("max_over_median", 0)
                         for r in mine)
         entry = {
             "config": cfg.name,
@@ -91,7 +106,8 @@ def main() -> int:
         print(f"게이트(5배 이상)               : "
               f"{'통과' if value >= 5 else '미달'}")
 
-    config.write_measurement("skew-rederived", {"runs": rows, "summary": table})
+    config.write_measurement(args.out, {"logs": args.logs, "runs": rows,
+                                        "summary": table})
     return 0
 
 

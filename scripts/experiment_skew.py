@@ -135,7 +135,7 @@ def main() -> int:
                            root=root,
                            shuffle_partitions=args.shuffle_partitions)
             results.append(row)
-            skewed = row.get("most_skewed") or {}
+            skewed = row.get("join_stage") or {}
             print(f"  {rep}회차 {cfg.name:10} "
                   f"{row['wall_seconds']:7.1f}초  "
                   f"최장/중앙 {skewed.get('max_over_median', 0):6.2f}  "
@@ -150,7 +150,7 @@ def main() -> int:
         if not rows:
             continue
         walls = sorted(r["wall_seconds"] for r in rows)
-        ratios = [(r.get("most_skewed") or {}).get("max_over_median", 0)
+        ratios = [(r.get("join_stage") or {}).get("max_over_median", 0)
                   for r in rows]
         entry = {
             "config": cfg.name,

@@ -243,30 +243,54 @@ def test_가장_무거운_단계와_가장_치우친_단계가_다를_수_있다
     parsed = eventlog.parse(scan + join)
 
     assert eventlog.heaviest(parsed["stages"]).stage_id == 5
-    assert eventlog.most_skewed(parsed["stages"]).stage_id == 6
 
 
-def test_태스크가_적은_단계는_스큐_후보에서_뺀다():
-    """두세 개짜리 단계는 비율이 잡음으로 튄다. 실물에서 태스크 1개짜리
-    단계가 섞여 있었다."""
-    tiny = [task_end(1, 10), task_end(1, 1000)]
-    real = [task_end(2, 100) for _ in range(20)] + [task_end(2, 200)]
-    parsed = eventlog.parse(tiny + real)
-    assert eventlog.most_skewed(parsed["stages"]).stage_id == 2
+def _join_job():
+    """조인 잡 하나의 모양. 실물(클러스터 aqe_on-1)의 단계 셋을 본떴다.
+
+        Delta 로그   50 태스크, 셔플 읽기 21.7MB, 최장/중앙 12.00
+        스캔         569 태스크, 셔플 읽기 0, 시간 합 최대
+        조인         14 태스크, 셔플 읽기 855MB, 최장/중앙 1.24
+    """
+    delta_log = ([task_end(2, 270, read_remote=434_000) for _ in range(49)]
+                 + [task_end(2, 3240, read_remote=434_000)])
+    scan = [task_end(7, 2176, write=1_500_000) for _ in range(569)]
+    join = ([task_end(10, 4020, read_remote=61_000_000) for _ in range(13)]
+            + [task_end(10, 4968, read_remote=61_000_000)])
+    return eventlog.parse(delta_log + scan + join)
 
 
-def test_후보가_없으면_None이다():
+def test_조인_단계는_셔플을_가장_많이_읽는_단계다():
+    """비율이 가장 큰 단계를 고르면 Delta 로그 단계가 이긴다.
+
+    실물에서 그렇게 틀렸다. 일이 거의 없는 장부 단계는 태스크 하나만 늦어도
+    비율이 튄다. 그 12.00이 'AQE가 오히려 스큐를 키웠다'로 읽힐 뻔했다.
+    로컬 aqe_on 세 런과 both 한 런의 기록도 이 단계의 값이었다.
+
+    재려는 것은 조인의 셔플이다. 조인의 받는 쪽 단계는 양쪽의 셔플 출력을
+    전부 읽으므로, 셔플 읽기가 가장 큰 단계가 곧 그 단계다. 문턱값이 필요 없다.
+    """
+    stages = _join_job()["stages"]
+    assert eventlog.join_stage(stages).stage_id == 10
+
+
+def test_조인_단계는_가장_무거운_단계와_다를_수_있다():
+    stages = _join_job()["stages"]
+    assert eventlog.heaviest(stages).stage_id == 7
+    assert eventlog.join_stage(stages).stage_id == 10
+
+
+def test_셔플이_없으면_조인_단계도_없다():
     parsed = eventlog.parse([task_end(1, 10), task_end(1, 20)])
-    assert eventlog.most_skewed(parsed["stages"]) is None
+    assert eventlog.join_stage(parsed["stages"]) is None
 
 
 def test_요약이_둘을_따로_담는다():
-    scan = [task_end(5, 4000) for _ in range(20)] + [task_end(5, 4400)]
-    join = [task_end(6, 400) for _ in range(20)] + [task_end(6, 2000)]
-    s = eventlog.summary(eventlog.parse(scan + join))
-    assert s["heaviest"]["stage_id"] == 5
-    assert s["most_skewed"]["stage_id"] == 6
-    assert len(s["all_stages"]) == 2
+    s = eventlog.summary(_join_job())
+    assert s["heaviest"]["stage_id"] == 7
+    assert s["join_stage"]["stage_id"] == 10
+    assert "most_skewed" not in s
+    assert len(s["all_stages"]) == 3
 
 
 # ── 워커를 잃은 뒤 다시 한 일 ───────────────────────────────

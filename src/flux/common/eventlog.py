@@ -292,43 +292,43 @@ def recomputed(rec: dict) -> bool:
     return bool(rec["executors_removed"]) and rec["tasks_done_by_removed"] > 0 and redone
 
 
-# 스큐를 볼 단계를 고를 때 무시할 크기. 태스크가 몇 개뿐인 단계는
-# 비율이 잡음으로 크게 나온다.
-MIN_TASKS_FOR_SKEW = 10
-
-
 def heaviest(stages):
     """가장 오래 걸린 단계. **전체 소요를 정하는 단계**다.
 
-    스큐를 보는 자리가 아니다. 그렇게 썼다가 틀렸다 — 아래 most_skewed 참고.
+    스큐를 보는 자리가 아니다. 그렇게 썼다가 틀렸다 — 아래 join_stage 참고.
     """
     return max(stages, key=lambda s: s.total_ms, default=None)
 
 
-def most_skewed(stages):
-    """가장 치우친 단계. **스큐를 보는 자리는 여기다.**
+def join_stage(stages):
+    """조인의 받는 쪽 단계. **스큐를 보는 자리는 여기다.**
 
-    처음엔 heaviest를 스큐 지표로 썼다가 빗나갔다. 조인 잡에서 가장 무거운
-    단계는 **입력 파일을 읽는 스캔**이고, 그건 파일 단위로 나뉘어 원래 고르다
-    (569 태스크, 최장/중앙 1.09).
+    두 번 틀린 끝에 이 정의가 됐다.
 
-    스큐는 **셔플 뒤 단계**에 있다. 같은 키가 한 파티션에 모이는 곳이고,
-    태스크 수가 셔플 파티션 수와 같다 (200 태스크, 최장/중앙 4.94).
+    처음엔 heaviest(총 태스크 시간이 가장 큰 단계)를 썼다. 조인 잡에서 그
+    단계는 입력 파일을 읽는 스캔이고, 파일 단위로 나뉘어 원래 고르다
+    (569 태스크, 최장/중앙 1.09). **큰 단계와 치우친 단계가 다르다.**
 
-    총 시간으로 고르면 스캔이 이긴다. 스캔이 2,324,083ms인데 조인은
-    116,146ms라 20배 차이다. **큰 단계와 치우친 단계가 다르다.**
+    그다음엔 "태스크 10개 이상인 단계 중 최장/중앙이 가장 큰 단계"를 썼다.
+    이번엔 **Delta 트랜잭션 로그를 읽는 단계**가 이겼다. 50 태스크에 셔플 읽기
+    21.7MB뿐인 장부 단계라, 태스크 하나만 늦어도 비율이 튄다. 클러스터 aqe_on에서
+    12.00이 나와 'AQE가 스큐를 키웠다'로 읽힐 뻔했고, 거슬러 보니 로컬 aqe_on
+    세 런과 both 한 런의 기록도 이 단계의 값이었다. **가장 치우친 단계가 재려는
+    단계라는 보장이 없다.**
 
-    태스크가 적은 단계는 뺀다. 두세 개짜리 단계는 비율이 잡음으로 튄다.
+    재려는 것은 조인의 셔플이다. 조인의 받는 쪽은 양쪽 셔플 출력을 전부 읽으므로
+    **셔플 읽기가 가장 큰 단계**가 곧 그 단계다. 문턱값도 없고, AQE가 파티션을
+    합치거나 쪼개도 그 단계가 그대로 남는다.
     """
-    eligible = [s for s in stages if s.tasks >= MIN_TASKS_FOR_SKEW]
-    return max(eligible, key=lambda s: s.max_over_median, default=None)
+    shuffled = [s for s in stages if s.shuffle_read > 0]
+    return max(shuffled, key=lambda s: s.shuffle_read, default=None)
 
 
 def summary(parsed: dict) -> dict:
     """실험 한 번의 요약. 게이트가 요구한 항목을 전부 담는다."""
     stages = parsed["stages"]
     top = heaviest(stages)
-    skewed = most_skewed(stages)
+    skewed = join_stage(stages)
     return {
         "app_ms": parsed["app_ms"],
         "stages": len(stages),
@@ -336,6 +336,6 @@ def summary(parsed: dict) -> dict:
         "shuffle_read_bytes": sum(s.shuffle_read for s in stages),
         "shuffle_write_bytes": sum(s.shuffle_write for s in stages),
         "heaviest": top.summary() if top else None,
-        "most_skewed": skewed.summary() if skewed else None,
+        "join_stage": skewed.summary() if skewed else None,
         "all_stages": [s.summary() for s in stages],
     }
