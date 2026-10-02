@@ -94,14 +94,14 @@ def workload(spark, fact_path: str) -> dict:
         F.countDistinct("artist_mbid").alias("artists"),
         # 합계만 보면 순서가 달라져도 같으므로 놓치는 오류가 있다.
         # 해시의 합은 어느 행 하나가 달라져도 바뀐다.
-        F.sum(F.xxhash64("artist_mbid", "listened_date", "listens"))
-         .alias("fingerprint"),
+        mart_build.fingerprint("artist_mbid", "listened_date", "listens")
+        .alias("fingerprint"),
     ).first()
     return {
         "rows": row["rows"],
         "listens": row["listens"],
         "artists": row["artists"],
-        "fingerprint": row["fingerprint"],
+        "fingerprint": str(row["fingerprint"]),
     }
 
 

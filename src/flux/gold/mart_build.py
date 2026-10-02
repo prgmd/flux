@@ -219,3 +219,19 @@ def join_for_experiment(spark: SparkSession, fact_path: str, dim: DataFrame,
                         months: list | None = None) -> DataFrame:
     return (join_salted if salting else join_plain)(
         spark, fact_path, dim, months)
+
+
+def fingerprint(*columns):
+    """행 전체를 숫자 하나로 접는 집계. 두 실행이 같은 답을 냈는지 대조할 때 쓴다.
+
+    행마다 해시를 내고 더한다. 더하기는 순서와 무관하므로 셔플 순서가 달라도 같고,
+    어느 행 하나의 값이 달라지면 바뀐다.
+
+    **`decimal(38,0)`로 더한다.** 64비트 해시를 `long`으로 더하면 행이 수백만이면
+    넘친다. Spark 4는 ANSI 모드가 기본이라 넘치면 오류로 멈춘다. 워커 종료 실험이
+    1,479만 행에서 그렇게 죽었다. ANSI가 꺼진 Spark 3이었다면 조용히 감겨서
+    그럴듯한 숫자가 나왔을 것이고, 두 실행이 같은 방식으로 감기니 대조도 통과했을
+    것이다. 해시 최댓값(약 9.2×10^18)을 1,500만 번 더해도 10^26 남짓이라 38자리
+    안에 들어간다.
+    """
+    return F.sum(F.xxhash64(*columns).cast("decimal(38,0)"))

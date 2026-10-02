@@ -19,6 +19,8 @@ import pytest
 pytest.importorskip("pyspark", reason="Spark 없이 도는 환경이다")
 pytest.importorskip("delta", reason="delta-spark가 없다")
 
+from pyspark.sql import functions as F
+
 from flux.gold import dim_artist, fact, fact_listens, mart_build, scd2
 
 pytestmark = pytest.mark.spark
@@ -580,3 +582,27 @@ def test_소금_경로도_월_제한을_받는다(spark, warehouse):
         spark, fact_path, dim, salting=True, months=["2026-09"])
     assert salted.count() == 2
     assert {r["_record_id"] for r in salted.collect()} == {2, 3}
+
+
+# ── 결과 지문 ───────────────────────────────────────────────
+
+def test_fingerprint는_행이_많아도_넘치지_않는다(spark):
+    """64비트 해시를 long으로 더하면 수십만 행이면 넘친다. Spark 4는 ANSI가
+    기본이라 넘치면 멈춘다. 워커 종료 실험이 1,479만 행에서 그렇게 죽었다."""
+    frame = spark.range(300_000).withColumn("v", F.col("id") * 7)
+    got = frame.agg(mart_build.fingerprint("id", "v").alias("fp")).first()["fp"]
+    assert got is not None
+
+
+def test_fingerprint는_순서와_무관하고_값_하나에_반응한다(spark):
+    rows = [(i, f"이름{i}") for i in range(50)]
+    forward = spark.createDataFrame(rows, "k long, name string")
+    backward = spark.createDataFrame(list(reversed(rows)), "k long, name string")
+    changed = spark.createDataFrame(rows[:-1] + [(49, "다른 이름")],
+                                    "k long, name string")
+
+    def fp(frame):
+        return frame.agg(mart_build.fingerprint("k", "name").alias("fp")).first()["fp"]
+
+    assert fp(forward) == fp(backward)
+    assert fp(forward) != fp(changed)
