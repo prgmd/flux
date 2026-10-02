@@ -41,8 +41,14 @@ from flux.common.spark import session as spark_session
 from flux.gold import fact, mart_build, scd2, skew
 
 
-def event_dir(root: Path, run: str) -> Path:
-    path = root / "eventlogs" / run
+def event_dir(root: Path, out: str, run: str) -> Path:
+    """실행 하나의 이벤트 로그 자리. **실측 파일 이름 아래에 둔다.**
+
+    처음엔 `eventlogs/<구성>-<회차>`였다. 그러면 다른 실험이 같은 구성 이름으로
+    돌 때 앞 실험의 원자료를 지운다. 9월 18일 groupBy 실험의 로그가 9월 19일 조인
+    실험에 그렇게 덮였고, 나중에 지표를 고쳤을 때 그 실험만 다시 뽑을 수 없었다.
+    """
+    path = root / "eventlogs" / out / run
     if path.exists():
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -50,14 +56,14 @@ def event_dir(root: Path, run: str) -> Path:
 
 
 def run_once(cfg, rep: int, *, fact_path: str, dim_path: str, root: Path,
-             shuffle_partitions: int) -> dict:
+             shuffle_partitions: int, out: str) -> dict:
     """구성 하나를 한 번 돌리고 수치를 거둔다.
 
     **세션을 매번 새로 만들고 끝나면 닫는다.** 한 세션을 재사용하면 앞 실행이
     남긴 캐시와 통계가 다음 실행에 섞인다.
     """
     name = f"{cfg.name}-{rep}"
-    logs = event_dir(root, name)
+    logs = event_dir(root, out, name)
 
     extra = dict(cfg.spark_conf())
     extra["spark.eventLog.enabled"] = "true"
@@ -124,7 +130,7 @@ def main() -> int:
         print(f"  {c.name:10} {c.label}")
     print(f"회차 {args.repeats}회, 총 {len(configs) * args.repeats}런")
     print(f"마스터 {master}, 셔플 파티션 {args.shuffle_partitions}")
-    print(f"실측 파일 {args.out}")
+    print(f"실측 파일 {args.out}, 이벤트 로그 eventlogs/{args.out}/")
     print()
 
     results = []
@@ -133,7 +139,8 @@ def main() -> int:
         for cfg in configs:
             row = run_once(cfg, rep, fact_path=fact_path, dim_path=dim_path,
                            root=root,
-                           shuffle_partitions=args.shuffle_partitions)
+                           shuffle_partitions=args.shuffle_partitions,
+                           out=args.out)
             results.append(row)
             skewed = row.get("join_stage") or {}
             print(f"  {rep}회차 {cfg.name:10} "
@@ -181,7 +188,7 @@ def main() -> int:
     agreed = len(distinct_rows) == 1 and len(distinct_named) == 1
     print()
     if agreed:
-        print(f"대조 통과 : 네 구성이 같은 결과를 냈다 "
+        print(f"대조 통과 : {len(table)}개 구성이 같은 결과를 냈다 "
               f"({distinct_rows[0]:,}행, 이름 붙음 {distinct_named[0]:,})")
     else:
         print(f"대조 실패 : 행 수 {distinct_rows}, 이름 붙은 수 {distinct_named}")
