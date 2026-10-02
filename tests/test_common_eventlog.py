@@ -404,14 +404,27 @@ def test_지표마다_따로_최고값을_고른다():
     peak = eventlog.peak_memory([
         with_memory(900, 10, gc=5), with_memory(300, 200, execution=70, gc=40),
     ])
-    assert peak == {"jvm_heap": 900, "storage": 200, "execution": 70, "gc_ms": 40}
+    assert peak == {"jvm_heap": 900, "storage": 200, "execution": 70, "gc_ms": 35}
+
+
+def test_GC_시간은_누적값의_최대가_아니라_구간의_차이다():
+    """같은 JVM에서 세 번째로 돈 런은 앞 두 런의 GC까지 누적값에 들고 있다."""
+    third_run = [with_memory(500, 1, gc=3_098), with_memory(500, 1, gc=3_670)]
+    assert eventlog.peak_memory(third_run)["gc_ms"] == 572
 
 
 def test_메모리_지표가_없는_태스크는_건너뛴다():
     """실패한 태스크나 오래된 로그에는 이 칸이 비어 있을 수 있다."""
     bare = task_end(0, 10)
     assert eventlog.peak_memory([bare, with_memory(5, 6)])["storage"] == 6
-    assert eventlog.peak_memory([bare])["jvm_heap"] == 0
+
+
+def test_한_번도_못_쟀으면_0이_아니라_None이다():
+    """실물에서 10초 남짓 끝난 broadcast 잡의 힙이 0MB로 나왔다. 하트비트가 한 번도
+    안 와서 못 잰 것이다. 0을 내면 "메모리를 안 썼다"로 읽힌다."""
+    unmeasured = [with_memory(0, 0), task_end(0, 10)]
+    assert eventlog.peak_memory(unmeasured) == {
+        "jvm_heap": None, "storage": None, "execution": None, "gc_ms": None}
 
 
 # ── 물리 계획 ───────────────────────────────────────────────

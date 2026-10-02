@@ -399,9 +399,19 @@ def peak_memory(events) -> dict:
     셋을 나눠 보는 이유가 있다. `storage`는 캐시와 **브로드캐스트 블록**이 올라가는
     자리라 차원을 복사하는 비용이 여기 찍힌다. `execution`은 정렬과 해시 조인이
     쓰는 자리다. `jvm_heap`은 둘을 포함한 힙 전체인데 GC 시점에 따라 흔들린다.
-    `gc_ms`는 실행기마다 누적값이라 최댓값이 곧 그 실행기의 총 GC 시간이다.
+
+    `gc_ms`는 **이 로그 구간 동안의** GC 시간이다. `TotalGCTime`은 JVM이 뜬 뒤부터의
+    누적값이라 최댓값을 쓰면 안 된다. PySpark는 세션을 닫고 새로 만들어도 같은 JVM을
+    계속 쓰므로, 한 프로세스에서 여러 번 돌리면 누적값이 런마다 늘어난다(실물에서
+    761, 1092, 1444 … 3670ms). 최대에서 최소를 뺀다.
+
+    **한 번도 못 쟀으면 0이 아니라 None을 돌려준다.** Spark는 실행기 메모리를 기본으로
+    하트비트(10초)마다 잰다. 10초 안에 끝난 잡은 한 번도 못 재서 전부 0이 남는데,
+    살아 있는 JVM의 힙이 0일 수는 없다. 0을 그대로 내면 "브로드캐스트가 메모리를 안
+    썼다"로 읽힌다. 잴 때는 `spark.executor.metrics.pollingInterval`을 짧게 준다.
     """
     peaks = {key: 0 for key in MEMORY_METRICS}
+    gc_first = None
     for line in events:
         line = line.strip()
         if not line:
@@ -417,6 +427,12 @@ def peak_memory(events) -> dict:
             value = metrics.get(field_name, 0) or 0
             if value > peaks[key]:
                 peaks[key] = value
+        gc = metrics.get("TotalGCTime")
+        if gc and (gc_first is None or gc < gc_first):
+            gc_first = gc
+    if peaks["jvm_heap"] == 0:
+        return {key: None for key in MEMORY_METRICS}
+    peaks["gc_ms"] = peaks["gc_ms"] - (gc_first or 0)
     return peaks
 
 
