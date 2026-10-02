@@ -198,14 +198,98 @@ def _open(path: Path):
     return open(path, encoding="utf-8", errors="replace")
 
 
-def read(path) -> dict:
-    """로그를 읽어 단계별로 묶는다. 조각이 여럿이면 순서대로 잇는다."""
-    def stream():
-        for part in event_files(path):
-            with _open(part) as handle:
-                yield from handle
+def lines(path):
+    """로그의 줄들. 조각이 여럿이면 순서대로 잇는다."""
+    for part in event_files(path):
+        with _open(part) as handle:
+            yield from handle
 
-    return parse(stream())
+
+def read(path) -> dict:
+    """로그를 읽어 단계별로 묶는다."""
+    return parse(lines(path))
+
+
+# ── 워커를 잃은 뒤 무엇을 다시 했는가 ─────────────────────────
+
+STAGE_COMPLETED = "SparkListenerStageCompleted"
+EXECUTOR_REMOVED = "SparkListenerExecutorRemoved"
+SUCCESS = "Success"
+
+
+def recovery(events) -> dict:
+    """워커를 잃은 잡에서 Spark가 다시 한 일을 센다.
+
+    **답이 같다는 것만으로는 재계산이 일어났다는 증거가 못 된다.** 잡이 끝난
+    뒤에 죽였거나, 죽인 워커가 맡은 일이 없었어도 답은 같다. 그러면 게이트가
+    "재계산이 일어나고 결과가 정합한지"를 확인한 것이 아니라 아무 일도 없었던
+    잡을 두 번 돌린 것이 된다.
+
+    그래서 셋을 센다.
+
+        사라진 실행기         그 실행기가 그때까지 끝낸 태스크 수와 함께
+        실패한 태스크         사유별로. ExecutorLostFailure, FetchFailed 등
+        다시 시도한 것        두 번째 이상 시도로 성공한 태스크, 시도 번호가
+                              1 이상인 단계
+
+    사라진 실행기가 끝낸 태스크가 있어야 **잃은 것이 있었다**고 말할 수 있다.
+    셔플 출력은 그것을 쓴 실행기의 디스크에 있으므로, 실행기가 죽으면 이미
+    끝난 태스크의 결과도 같이 사라진다.
+    """
+    removed = []
+    done_by: dict = {}
+    failed: dict = {}
+    retried = 0
+    resubmitted = set()
+
+    for line in events:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+
+        kind = event.get("Event")
+        if kind == EXECUTOR_REMOVED:
+            removed.append(str(event.get("Executor ID")))
+        elif kind == STAGE_COMPLETED:
+            info = event.get("Stage Info") or {}
+            if info.get("Stage Attempt ID", 0) > 0:
+                resubmitted.add(info.get("Stage ID"))
+        elif kind == TASK_END:
+            reason = (event.get("Task End Reason") or {}).get("Reason", "Unknown")
+            info = event.get("Task Info") or {}
+            if event.get("Stage Attempt ID", 0) > 0:
+                resubmitted.add(event.get("Stage ID"))
+            if reason != SUCCESS:
+                failed[reason] = failed.get(reason, 0) + 1
+                continue
+            executor = str(info.get("Executor ID"))
+            done_by[executor] = done_by.get(executor, 0) + 1
+            if info.get("Attempt", 0) > 0:
+                retried += 1
+
+    return {
+        "executors_removed": sorted(set(removed)),
+        "tasks_done_by_removed": sum(done_by.get(e, 0) for e in set(removed)),
+        "failed_tasks": dict(sorted(failed.items())),
+        "retried_tasks": retried,
+        "resubmitted_stages": sorted(s for s in resubmitted if s is not None),
+    }
+
+
+def recomputed(rec: dict) -> bool:
+    """재계산이 일어났다고 말할 수 있는가.
+
+    실행기가 사라졌고, 그 실행기가 끝낸 일이 있었고, Spark가 무언가를 다시
+    했어야 한다. 셋 중 하나라도 없으면 장애를 견딘 것이 아니라 장애가 없었던 것이다.
+    """
+    redone = (sum(rec["failed_tasks"].values()) > 0
+              or rec["retried_tasks"] > 0
+              or bool(rec["resubmitted_stages"]))
+    return bool(rec["executors_removed"]) and rec["tasks_done_by_removed"] > 0 and redone
 
 
 # 스큐를 볼 단계를 고를 때 무시할 크기. 태스크가 몇 개뿐인 단계는

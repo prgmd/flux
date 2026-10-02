@@ -267,3 +267,92 @@ def test_요약이_둘을_따로_담는다():
     assert s["heaviest"]["stage_id"] == 5
     assert s["most_skewed"]["stage_id"] == 6
     assert len(s["all_stages"]) == 2
+
+
+# ── 워커를 잃은 뒤 다시 한 일 ───────────────────────────────
+
+def ended(stage_id, executor, *, reason="Success", attempt=0, stage_attempt=0):
+    return json.dumps({
+        "Event": "SparkListenerTaskEnd",
+        "Stage ID": stage_id,
+        "Stage Attempt ID": stage_attempt,
+        "Task End Reason": {"Reason": reason},
+        "Task Info": {"Executor ID": executor, "Attempt": attempt},
+        "Task Metrics": {"Executor Run Time": 1},
+    })
+
+
+def removed(executor):
+    return json.dumps({"Event": "SparkListenerExecutorRemoved",
+                       "Executor ID": executor, "Removed Reason": "worker lost"})
+
+
+def stage_done(stage_id, attempt):
+    return json.dumps({"Event": "SparkListenerStageCompleted",
+                       "Stage Info": {"Stage ID": stage_id,
+                                      "Stage Attempt ID": attempt}})
+
+
+def test_아무_일도_없었으면_재계산이_아니다():
+    """이것을 막으려고 만든 함수다. 답이 같아도 통과로 치면 안 된다."""
+    rec = eventlog.recovery([ended(0, "0"), ended(0, "1"), ended(1, "2")])
+    assert rec["executors_removed"] == []
+    assert not eventlog.recomputed(rec)
+
+
+def test_실행기를_잃고_다시_하면_재계산이다():
+    rec = eventlog.recovery([
+        ended(0, "0"), ended(0, "1"), ended(0, "1"),
+        removed("1"),
+        ended(1, "0", reason="FetchFailed"),
+        ended(0, "0", stage_attempt=1), ended(0, "2", stage_attempt=1),
+        stage_done(0, 1),
+        ended(1, "0", stage_attempt=1),
+    ])
+    assert rec["executors_removed"] == ["1"]
+    assert rec["tasks_done_by_removed"] == 2
+    assert rec["failed_tasks"] == {"FetchFailed": 1}
+    assert rec["resubmitted_stages"] == [0, 1]
+    assert eventlog.recomputed(rec)
+
+
+def test_일이_없던_실행기를_잃은_것은_재계산이_아니다():
+    """빈 워커를 죽이면 잃은 것이 없다. 장애를 견딘 게 아니라 장애가 없었다."""
+    rec = eventlog.recovery([ended(0, "0"), ended(0, "0"), removed("2"),
+                             ended(1, "0")])
+    assert rec["executors_removed"] == ["2"]
+    assert rec["tasks_done_by_removed"] == 0
+    assert not eventlog.recomputed(rec)
+
+
+def test_잃기만_하고_다시_한_것이_없으면_재계산이_아니다():
+    """잡이 거의 끝난 뒤 죽였으면 다시 할 것이 없다."""
+    rec = eventlog.recovery([ended(0, "1"), ended(1, "0"), removed("1")])
+    assert rec["tasks_done_by_removed"] == 1
+    assert not eventlog.recomputed(rec)
+
+
+def test_재시도로_성공한_태스크를_센다():
+    """실행 중이던 태스크가 죽으면 같은 단계 안에서 다시 시도된다."""
+    rec = eventlog.recovery([
+        ended(0, "1"), removed("1"),
+        ended(0, "1", reason="ExecutorLostFailure"),
+        ended(0, "0", attempt=1),
+    ])
+    assert rec["failed_tasks"] == {"ExecutorLostFailure": 1}
+    assert rec["retried_tasks"] == 1
+    assert eventlog.recomputed(rec)
+
+
+def test_실패한_태스크는_끝낸_일로_세지_않는다():
+    """실행기가 죽으면서 실패로 끝난 태스크는 남긴 출력이 없다."""
+    rec = eventlog.recovery([
+        ended(0, "1", reason="ExecutorLostFailure"), removed("1"),
+    ])
+    assert rec["tasks_done_by_removed"] == 0
+
+
+def test_재계산_집계도_깨진_줄을_건너뛴다():
+    """죽는 잡의 로그는 마지막 줄이 반쪽일 수 있다."""
+    rec = eventlog.recovery([ended(0, "1"), removed("1"), '{"Event": "Spark'])
+    assert rec["executors_removed"] == ["1"]
