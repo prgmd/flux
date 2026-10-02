@@ -43,10 +43,21 @@ def test_지문_계산이_양쪽에서_같은_식이다(source):
 
 
 def test_지문이_소스_전체를_덮는다(source):
-    """한 파일만 보면 다른 파일이 옛것인 것을 놓친다."""
+    """한 파일만 보면 다른 파일이 옛것인 것을 놓친다.
+
+    tests가 빠져 있었다. 이미지가 tests도 구워 들고 있으므로, 컨테이너에서
+    도는 테스트가 옛 파일이어도 아무 말이 없었다. 새 테스트 세 건이 통과한
+    줄 알았는데 실제로는 한 번도 안 돌았다."""
     command = source.split("FINGERPRINT_CMD=", 1)[1].split("\n", 1)[0]
-    assert "src" in command and "scripts" in command
-    assert "*.py" in command
+    for part in ("src", "scripts", "tests", "pytest.ini", "*.py"):
+        assert part in command, part
+
+
+def test_지문이_덮는_것은_전부_마운트된다(source):
+    """지문에 넣고 마운트를 빼면 매번 실패하고, 마운트하고 지문에서 빼면
+    옛것을 못 잡는다. 둘이 같은 목록이어야 한다."""
+    for part in ("src", "scripts", "tests", "pytest.ini"):
+        assert f'"$repo/{part}:/opt/flux/{part}:ro"' in source, part
 
 
 def test_다르면_잡을_돌리지_않는다(source):

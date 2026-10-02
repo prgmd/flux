@@ -33,7 +33,11 @@ fi
 # sha256sum의 출력 형식이 양쪽에서 다르다. Git Bash 쪽 coreutils는 이진 모드
 # 표식을 파일명 앞에 붙이고 데비안 쪽은 공백 두 칸을 쓴다. 내용이 같아도
 # 지문이 어긋나므로 해시값만 떼어 쓴다. 파일 목록 자체는 sort로 고정한다.
-FINGERPRINT_CMD='find src scripts -name "*.py" -not -path "*__pycache__*" | LC_ALL=C sort | xargs sha256sum | cut -c1-64 | sha256sum | cut -c1-64'
+#
+# tests와 pytest.ini도 넣는다. 처음엔 src와 scripts만 덮었는데, 이미지가 tests도
+# 구워 들고 있어서 **컨테이너에서 돈 테스트가 옛 파일**이었다. 새로 쓴 테스트
+# 세 건이 통과한 줄 알았는데 이미지에는 그 세 건이 아예 없었다.
+FINGERPRINT_CMD='{ find src scripts tests -name "*.py" -not -path "*__pycache__*"; echo pytest.ini; } | LC_ALL=C sort | xargs sha256sum | cut -c1-64 | sha256sum | cut -c1-64'
 
 expected="$(cd "$repo" && eval "$FINGERPRINT_CMD")"
 
@@ -48,6 +52,8 @@ exec docker run --rm \
     -v "$data:/data" \
     -v "$repo/src:/opt/flux/src:ro" \
     -v "$repo/scripts:/opt/flux/scripts:ro" \
+    -v "$repo/tests:/opt/flux/tests:ro" \
+    -v "$repo/pytest.ini:/opt/flux/pytest.ini:ro" \
     -v flux-ivy2:/opt/flux/ivy \
     -e FLUX_STORAGE_ROOT="${FLUX_STORAGE_ROOT:-file:///data}" \
     -e FLUX_SRC_FINGERPRINT="$expected" \
