@@ -215,9 +215,46 @@ def test_보낸_줄_수가_scd2_stage와_같다(spark, warehouse):
     assert keys == sorted((key or "") for key, _ in expected)
 
 
+def _merge(spark, path, name, *, at, release):
+    dim_artist.merge(spark, path, dim_artist.prepare(
+        spark.createDataFrame([_artist(MBID_A, name)], DIM_INPUT_SCHEMA),
+        at=at, release=release), at=at)
+
+
 def test_같은_날짜로_다시_실으면_거부한다(spark, warehouse):
     """닫으면 valid_from == valid_to가 되어 잡이 자기 게이트를 깬다.
-    쓰기 전에 막는다 — 쓴 뒤에 잡으면 망가진 차원을 되돌려야 한다."""
+    쓰기 전에 막는다 — 쓴 뒤에 잡으면 망가진 차원을 되돌려야 한다.
+
+    **적재가 아니라 병합을 먼저 해야 이 상황이 만들어진다.** 초기 적재는
+    valid_from을 먼 과거로 쓰므로(create), 적재 직후 같은 날 병합하는 것은
+    애초에 무해하다. 위험한 줄은 **병합이 연 줄**이다. 그 줄의 valid_from이
+    그날이므로, 같은 날 또 닫으면 구간이 0이 된다.
+    """
+    path = _create(spark, warehouse, [_artist(MBID_A, "옛 이름")],
+                   at="2026-09-01")
+    _merge(spark, path, "새 이름", at="2026-09-15", release="r2")
+
+    # 같은 날 릴리스가 또 바뀌어 다시 싣는다.
+    again = dim_artist.prepare(
+        spark.createDataFrame([_artist(MBID_A, "더 새 이름")], DIM_INPUT_SCHEMA),
+        at="2026-09-15", release="r3")
+
+    assert dim_artist.unclosable(spark, path, again, at="2026-09-15") == 1
+    with pytest.raises(dim_artist.SameDayReload):
+        dim_artist.merge(spark, path, again, at="2026-09-15")
+
+    # 거부했으면 아무것도 쓰지 않았어야 한다. 앞선 병합이 만든 두 줄 그대로다.
+    assert spark.read.format("delta").load(path).count() == 2
+
+
+def test_적재_직후_같은_날_병합은_거부하지_않는다(spark, warehouse):
+    """create가 valid_from을 먼 과거로 쓰기 때문이다.
+
+    이 테스트는 위 테스트가 **왜 모양을 바꿨는지**를 고정한다. 예전에는
+    적재 직후 같은 날 병합이 거부 대상이었는데, 초기 적재의 valid_from을
+    적재일에서 1970으로 고치면서 무해해졌다. 그 수정 뒤로 Spark 스위트를
+    완주한 적이 없어 위 테스트가 조용히 가짜가 되어 있었다.
+    """
     path = _create(spark, warehouse, [_artist(MBID_A, "옛 이름")],
                    at="2026-09-15")
 
@@ -225,25 +262,32 @@ def test_같은_날짜로_다시_실으면_거부한다(spark, warehouse):
         spark.createDataFrame([_artist(MBID_A, "새 이름")], DIM_INPUT_SCHEMA),
         at="2026-09-15", release="r2")
 
-    assert dim_artist.unclosable(spark, path, prepared, at="2026-09-15") == 1
-    with pytest.raises(dim_artist.SameDayReload):
-        dim_artist.merge(spark, path, prepared, at="2026-09-15")
-
-    # 거부했으면 아무것도 쓰지 않았어야 한다.
-    assert spark.read.format("delta").load(path).count() == 1
+    assert dim_artist.unclosable(spark, path, prepared, at="2026-09-15") == 0
+    dim_artist.merge(spark, path, prepared, at="2026-09-15")
+    rows = spark.read.format("delta").load(path).collect()
+    assert len(rows) == 2
+    closed = [r for r in rows if not r[scd2.IS_CURRENT]][0]
+    assert closed[scd2.VALID_FROM] == scd2.FAR_PAST
+    assert closed[scd2.VALID_TO] == "2026-09-15"
 
 
 def test_거부는_바뀐_아티스트만_본다(spark, warehouse):
-    """값을 바꾸지 않은 줄은 MERGE가 건드리지 않으므로 무해하다."""
-    path = _create(spark, warehouse, [_artist(MBID_A, "가수")], at="2026-09-15")
+    """값을 바꾸지 않은 줄은 MERGE가 건드리지 않으므로 무해하다.
 
-    prepared = dim_artist.prepare(
+    병합을 한 번 해 두어 valid_from이 그날인 줄을 만든다. 날짜만으로
+    거부한다면 여기서도 걸려야 하는데, 걸리지 않아야 맞다.
+    """
+    path = _create(spark, warehouse, [_artist(MBID_A, "옛 이름")],
+                   at="2026-09-01")
+    _merge(spark, path, "가수", at="2026-09-15", release="r2")
+
+    same = dim_artist.prepare(
         spark.createDataFrame([_artist(MBID_A, "가수")], DIM_INPUT_SCHEMA),
-        at="2026-09-15", release="r2")
+        at="2026-09-15", release="r3")
 
-    assert dim_artist.unclosable(spark, path, prepared, at="2026-09-15") == 0
-    dim_artist.merge(spark, path, prepared, at="2026-09-15")
-    assert spark.read.format("delta").load(path).count() == 1
+    assert dim_artist.unclosable(spark, path, same, at="2026-09-15") == 0
+    dim_artist.merge(spark, path, same, at="2026-09-15")
+    assert spark.read.format("delta").load(path).count() == 2
 
 
 @pytest.mark.parametrize("broadcast", [True, False])
