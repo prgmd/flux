@@ -44,14 +44,29 @@ def _dig(source: dict, *names, default=0):
     return current if current is not None else default
 
 
+def _median(values) -> float:
+    rows = sorted(values)
+    if not rows:
+        return 0.0
+    middle = len(rows) // 2
+    return (float(rows[middle]) if len(rows) % 2
+            else (rows[middle - 1] + rows[middle]) / 2)
+
+
 @dataclass
 class Stage:
-    """단계 하나. 태스크 여럿이 같은 일을 나눠 한다."""
+    """단계 하나. 태스크 여럿이 같은 일을 나눠 한다.
+
+    태스크마다 두 가지를 모은다. 걸린 시간(`durations`)과 셔플로 읽은 행 수
+    (`records`)다. 둘을 따로 두는 이유는 `records_max_over_median` 참고.
+    """
 
     stage_id: int
     durations: list = field(default_factory=list)
+    records: list = field(default_factory=list)
     shuffle_read: int = 0
     shuffle_write: int = 0
+    elapsed_ms: int = 0
 
     @property
     def tasks(self) -> int:
@@ -67,18 +82,30 @@ class Stage:
 
     @property
     def median_ms(self) -> float:
-        rows = sorted(self.durations)
-        if not rows:
-            return 0.0
-        middle = len(rows) // 2
-        return (float(rows[middle]) if len(rows) % 2
-                else (rows[middle - 1] + rows[middle]) / 2)
+        return _median(self.durations)
 
     @property
     def max_over_median(self) -> float:
-        """스큐의 크기. 1이면 고르고, 크면 한 태스크가 그만큼 붙잡는다."""
+        """태스크 시간의 최장/중앙. **스큐만 재는 값이 아니다.**
+
+        세 가지가 섞인다. 한 키에 몰린 데이터(재려던 것), 첫 물결 태스크의 예열
+        비용, 그리고 파티션 수. AQE가 파티션을 합치면 모든 태스크가 커져 중앙값이
+        올라가고, 긴 태스크가 그대로여도 비율은 내려간다. 데이터 편중만 보려면
+        `records_max_over_median`을 본다.
+        """
         median = self.median_ms
         return self.max_ms / median if median else 0.0
+
+    @property
+    def records_max_over_median(self) -> float:
+        """태스크가 읽은 행 수의 최대/중앙. **데이터가 한쪽에 몰린 정도.**
+
+        시간과 달리 예열이나 GC에 흔들리지 않는다. 같은 입력이면 매번 같은 값이
+        나온다. 조인 기준선에서 시간 비율은 4.94~5.65로 흔들렸지만 행 비율은
+        세 번 다 같았다.
+        """
+        median = _median(self.records)
+        return max(self.records) / median if median else 0.0
 
     def summary(self) -> dict:
         return {
@@ -87,6 +114,10 @@ class Stage:
             "max_ms": self.max_ms,
             "median_ms": self.median_ms,
             "max_over_median": round(self.max_over_median, 2),
+            "records_max": max(self.records) if self.records else 0,
+            "records_median": _median(self.records),
+            "records_max_over_median": round(self.records_max_over_median, 2),
+            "elapsed_ms": self.elapsed_ms,
             "total_task_ms": self.total_ms,
             "shuffle_read_bytes": self.shuffle_read,
             "shuffle_write_bytes": self.shuffle_write,
@@ -118,6 +149,12 @@ def parse(lines) -> dict:
         if kind == APP_END:
             app_end = event.get("Timestamp")
             continue
+        if kind == STAGE_COMPLETED:
+            info = event.get("Stage Info") or {}
+            done = stages.get(info.get("Stage ID"))
+            if done and info.get("Completion Time") and info.get("Submission Time"):
+                done.elapsed_ms = info["Completion Time"] - info["Submission Time"]
+            continue
         if kind != TASK_END:
             continue
 
@@ -129,6 +166,8 @@ def parse(lines) -> dict:
         metrics = event.get("Task Metrics") or {}
         # 태스크가 실제로 일한 시간. 대기 시간을 빼고 본다.
         stage.durations.append(_dig(metrics, "Executor Run Time"))
+        stage.records.append(
+            _dig(metrics, "Shuffle Read Metrics", "Total Records Read"))
         stage.shuffle_read += (
             _dig(metrics, "Shuffle Read Metrics", "Remote Bytes Read")
             + _dig(metrics, "Shuffle Read Metrics", "Local Bytes Read")
@@ -379,3 +418,51 @@ def peak_memory(events) -> dict:
             if value > peaks[key]:
                 peaks[key] = value
     return peaks
+
+
+# ── 물리 계획 ─────────────────────────────────────────────────
+
+SQL_START = "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart"
+SQL_ADAPTIVE = ("org.apache.spark.sql.execution.ui."
+                "SparkListenerSQLAdaptiveExecutionUpdate")
+JOIN_OPERATORS = ("SortMergeJoin", "BroadcastHashJoin", "ShuffledHashJoin",
+                  "BroadcastNestedLoopJoin", "CartesianProduct")
+
+
+def final_plans(events) -> dict:
+    """SQL 실행마다 마지막으로 기록된 물리 계획.
+
+    실행이 시작할 때 계획이 한 번 남고, AQE가 켜져 있으면 단계가 끝날 때마다
+    고친 계획이 다시 남는다. 마지막 것이 `isFinalPlan=true`인 최종 계획이다.
+
+    형식은 `explain(mode="formatted")`와 같다. Spark가 UI에 보여줄 계획을
+    `spark.sql.ui.explainMode`(기본 formatted)로 만들어 이벤트에 싣기 때문이다.
+    그래서 실험을 다시 돌리지 않고도 **그때 실제로 돈 계획**을 꺼낼 수 있다.
+    """
+    plans = {}
+    for line in events:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("Event") in (SQL_START, SQL_ADAPTIVE):
+            plan = event.get("physicalPlanDescription")
+            if plan:
+                plans[event.get("executionId")] = plan
+    return plans
+
+
+def join_plan(events):
+    """조인이 들어 있는 실행의 최종 계획. 없으면 None.
+
+    한 잡에도 SQL 실행이 여럿이다. Delta가 트랜잭션 로그로 파일 목록을 만드는
+    실행이 따로 있고, 그 계획이 본 쿼리보다 열 배 길다. 길이나 순서로 고르면
+    그것이 뽑힌다. 조인 연산자가 있는 실행을 고른다.
+    """
+    for _, plan in sorted(final_plans(events).items()):
+        if any(op in plan for op in JOIN_OPERATORS):
+            return plan
+    return None

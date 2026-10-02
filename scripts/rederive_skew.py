@@ -2,7 +2,7 @@
 
 실험을 다시 돌릴 필요가 없다. **원자료가 남아 있기 때문이다.**
 
-`experiment_skew.py`는 실행마다 `eventlogs/<구성>-<회차>/`에 로그를 따로
+`experiment_skew.py`는 실행마다 `eventlogs/<실측 이름>/<구성>-<회차>/`에 로그를 따로
 남긴다. 그러니 지표를 어떻게 세는지가 틀렸어도 **로그를 다시 읽으면 된다.**
 12런에 40분이 드는데 다시 읽는 것은 몇 초다.
 
@@ -49,6 +49,9 @@ def main() -> int:
         print(f"이벤트 로그가 없다: {logs}")
         return 1
 
+    plans = root / config.MEASUREMENTS / "plans" / args.out
+    plans.mkdir(parents=True, exist_ok=True)
+
     rows = []
     for cfg in skew.CONFIGS:
         for rep in range(1, skew.REPEATS + 1):
@@ -60,31 +63,46 @@ def main() -> int:
             except eventlog.NoEventLog:
                 print(f"{cfg.name}-{rep}: 로그 없음")
                 continue
-            rows.append({"config": cfg.name, "repeat": rep, **summary})
+            plan = eventlog.join_plan(eventlog.lines(path)) or ""
+            plan_file = plans / f"{cfg.name}-{rep}.txt"
+            plan_file.write_text(plan, encoding="utf-8")
+            joins = {op: plan.count(op) for op in eventlog.JOIN_OPERATORS
+                     if op in plan}
+            rows.append({"config": cfg.name, "repeat": rep, **summary,
+                         "joins": joins,
+                         "final_plan": "isFinalPlan=true" in plan,
+                         "plan_file": str(plan_file.relative_to(root))})
 
     if not rows:
         print("읽을 수 있는 실행이 없다")
         return 1
 
-    print(f"{'구성':11} {'회차':>3} {'무거운단계':>10} {'그 비율':>8} "
-          f"{'조인단계':>10} {'태스크':>7} {'그 비율':>8} {'셔플write':>11}")
+    print(f"{'구성':11} {'회차':>3} {'조인단계':>8} {'태스크':>6} "
+          f"{'시간비율':>8} {'행비율':>7} {'최장':>8} {'단계경과':>8} {'셔플write':>10}")
     for r in rows:
-        h, s = r["heaviest"] or {}, r["join_stage"] or {}
+        s = r["join_stage"] or {}
         print(f"{r['config']:11} {r['repeat']:>3} "
-              f"{h.get('stage_id', '-'):>10} {h.get('max_over_median', 0):>8.2f} "
-              f"{s.get('stage_id', '-'):>10} {s.get('tasks', 0):>7,} "
+              f"{s.get('stage_id', '-'):>8} {s.get('tasks', 0):>6,} "
               f"{s.get('max_over_median', 0):>8.2f} "
-              f"{r['shuffle_write_bytes'] / 1e9:>10.2f}GB")
+              f"{s.get('records_max_over_median', 0):>7.2f} "
+              f"{s.get('max_ms', 0) / 1000:>7.2f}초 "
+              f"{s.get('elapsed_ms', 0) / 1000:>7.1f}초 "
+              f"{r['shuffle_write_bytes'] / 1e9:>9.2f}GB")
+
+    def middle(values):
+        values = sorted(values)
+        return values[len(values) // 2]
 
     print()
-    print(f"{'구성':11} {'치우침 중앙':>11} {'최소':>7} {'최대':>7} {'런':>3}")
+    print(f"{'구성':11} {'시간비율':>16} {'행비율':>7} {'최장 태스크':>11} "
+          f"{'조인 단계 경과':>13} {'런':>3}")
     table = []
     for cfg in skew.CONFIGS:
         mine = [r for r in rows if r["config"] == cfg.name]
         if not mine:
             continue
-        ratios = sorted((r["join_stage"] or {}).get("max_over_median", 0)
-                        for r in mine)
+        joins = [r["join_stage"] or {} for r in mine]
+        ratios = sorted(j.get("max_over_median", 0) for j in joins)
         entry = {
             "config": cfg.name,
             "label": cfg.label,
@@ -92,11 +110,18 @@ def main() -> int:
             "skew_median": ratios[len(ratios) // 2],
             "skew_min": ratios[0],
             "skew_max": ratios[-1],
+            "records_skew": middle(j.get("records_max_over_median", 0)
+                                   for j in joins),
+            "longest_task_ms": middle(j.get("max_ms", 0) for j in joins),
+            "join_elapsed_ms": middle(j.get("elapsed_ms", 0) for j in joins),
+            "join_tasks": middle(j.get("tasks", 0) for j in joins),
         }
         table.append(entry)
-        print(f"{cfg.name:11} {entry['skew_median']:>11.2f} "
-              f"{entry['skew_min']:>7.2f} {entry['skew_max']:>7.2f} "
-              f"{entry['runs']:>3}")
+        print(f"{cfg.name:11} {entry['skew_median']:>5.2f} "
+              f"({entry['skew_min']:.2f}~{entry['skew_max']:.2f}) "
+              f"{entry['records_skew']:>7.2f} "
+              f"{entry['longest_task_ms'] / 1000:>10.2f}초 "
+              f"{entry['join_elapsed_ms'] / 1000:>12.1f}초 {entry['runs']:>3}")
 
     baseline = next((e for e in table if e["config"] == "aqe_off"), None)
     print()

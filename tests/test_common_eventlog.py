@@ -11,7 +11,8 @@ import pytest
 from flux.common import eventlog
 
 
-def task_end(stage_id, run_ms, *, read_remote=0, read_local=0, write=0):
+def task_end(stage_id, run_ms, *, read_remote=0, read_local=0, write=0,
+             records=0):
     return json.dumps({
         "Event": "SparkListenerTaskEnd",
         "Stage ID": stage_id,
@@ -24,6 +25,7 @@ def task_end(stage_id, run_ms, *, read_remote=0, read_local=0, write=0):
             "Shuffle Read Metrics": {
                 "Remote Bytes Read": read_remote,
                 "Local Bytes Read": read_local,
+                "Total Records Read": records,
             },
             "Shuffle Write Metrics": {"Shuffle Bytes Written": write},
         },
@@ -410,3 +412,77 @@ def test_메모리_지표가_없는_태스크는_건너뛴다():
     bare = task_end(0, 10)
     assert eventlog.peak_memory([bare, with_memory(5, 6)])["storage"] == 6
     assert eventlog.peak_memory([bare])["jvm_heap"] == 0
+
+
+# ── 물리 계획 ───────────────────────────────────────────────
+
+def sql_event(kind, execution, plan):
+    name = {"start": eventlog.SQL_START, "adaptive": eventlog.SQL_ADAPTIVE}[kind]
+    return json.dumps({"Event": name, "executionId": execution,
+                       "physicalPlanDescription": plan})
+
+
+def test_AQE가_고친_마지막_계획이_남는다():
+    plans = eventlog.final_plans([
+        sql_event("start", 7, "isFinalPlan=false SortMergeJoin"),
+        sql_event("adaptive", 7, "isFinalPlan=false SortMergeJoin 1"),
+        sql_event("adaptive", 7, "isFinalPlan=true SortMergeJoin 2"),
+    ])
+    assert plans == {7: "isFinalPlan=true SortMergeJoin 2"}
+
+
+def test_조인_계획은_Delta_스냅샷_실행이_아니라_조인이_있는_실행이다():
+    """실물에서 Delta 스냅샷 실행의 계획이 9만 자, 본 쿼리가 6천 자였다."""
+    delta = "Scan json _delta_log " * 5000
+    plan = eventlog.join_plan([
+        sql_event("start", 8, delta),
+        sql_event("start", 7, "== Physical Plan == SortMergeJoin LeftOuter"),
+        sql_event("adaptive", 11, delta + "x"),
+    ])
+    assert "SortMergeJoin" in plan and "_delta_log" not in plan
+
+
+def test_조인이_없으면_계획도_없다():
+    assert eventlog.join_plan([sql_event("start", 1, "HashAggregate")]) is None
+
+
+# ── 시간 편중과 데이터 편중 ─────────────────────────────────
+
+def stage_completed(stage_id, submitted, completed):
+    return json.dumps({"Event": "SparkListenerStageCompleted",
+                       "Stage Info": {"Stage ID": stage_id, "Stage Attempt ID": 0,
+                                      "Submission Time": submitted,
+                                      "Completion Time": completed}})
+
+
+def test_시간_비율과_행_비율은_따로_잰다():
+    """실물(로컬 salt_only-2)에서 둘이 갈렸다. 소금이 행 편중은 1.4배로
+    없앴는데, 첫 물결 태스크가 예열로 늦어 시간 비율은 3.62가 나왔다.
+    시간 비율만 보면 소금이 스큐를 반쯤만 고친 것처럼 읽힌다."""
+    first_wave = [task_end(9, 2968, records=530_000) for _ in range(5)]
+    rest = [task_end(9, 820, records=527_000) for _ in range(194)]
+    biggest = [task_end(9, 1154, records=729_000)]
+    stage = eventlog.parse(first_wave + rest + biggest)["stages"][0]
+    assert stage.max_over_median > 3.5
+    assert stage.records_max_over_median < 1.5
+
+
+def test_한_키에_몰린_파티션은_행_비율에_드러난다():
+    """기준선의 BTS 파티션. 326만 행 대 중앙 29만 행."""
+    rest = [task_end(6, 420, records=289_481) for _ in range(199)]
+    hot = [task_end(6, 2200, records=3_258_020)]
+    stage = eventlog.parse(rest + hot)["stages"][0]
+    assert round(stage.records_max_over_median, 1) == 11.3
+
+
+def test_단계_경과_시간은_제출부터_완료까지다():
+    """태스크 시간의 합이 아니다. 태스크가 동시에 돌므로 합은 경과보다 크다."""
+    parsed = eventlog.parse([task_end(6, 400), task_end(6, 500),
+                             stage_completed(6, 1_000, 1_700)])
+    assert parsed["stages"][0].elapsed_ms == 700
+
+
+def test_태스크_없는_단계는_완료_이벤트만으로_생기지_않는다():
+    """건너뛴 단계도 완료 이벤트를 남긴다. 빈 단계가 끼면 단계 수가 틀어진다."""
+    parsed = eventlog.parse([task_end(1, 10), stage_completed(9, 0, 5)])
+    assert [s.stage_id for s in parsed["stages"]] == [1]
