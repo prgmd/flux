@@ -380,3 +380,33 @@ def test_재계산_집계도_깨진_줄을_건너뛴다():
     """죽는 잡의 로그는 마지막 줄이 반쪽일 수 있다."""
     rec = eventlog.recovery([ended(0, "1"), removed("1"), '{"Event": "Spark'])
     assert rec["executors_removed"] == ["1"]
+
+
+# ── 실행기 메모리 ───────────────────────────────────────────
+
+def with_memory(heap, storage, execution=0, gc=0):
+    return json.dumps({
+        "Event": "SparkListenerTaskEnd", "Stage ID": 0, "Stage Attempt ID": 0,
+        "Task End Reason": {"Reason": "Success"},
+        "Task Info": {"Executor ID": "driver", "Attempt": 0},
+        "Task Metrics": {"Executor Run Time": 1},
+        "Task Executor Metrics": {"JVMHeapMemory": heap,
+                                  "OnHeapStorageMemory": storage,
+                                  "OnHeapExecutionMemory": execution,
+                                  "TotalGCTime": gc},
+    })
+
+
+def test_지표마다_따로_최고값을_고른다():
+    """힙이 가장 컸던 순간과 저장 메모리가 가장 컸던 순간은 다를 수 있다."""
+    peak = eventlog.peak_memory([
+        with_memory(900, 10, gc=5), with_memory(300, 200, execution=70, gc=40),
+    ])
+    assert peak == {"jvm_heap": 900, "storage": 200, "execution": 70, "gc_ms": 40}
+
+
+def test_메모리_지표가_없는_태스크는_건너뛴다():
+    """실패한 태스크나 오래된 로그에는 이 칸이 비어 있을 수 있다."""
+    bare = task_end(0, 10)
+    assert eventlog.peak_memory([bare, with_memory(5, 6)])["storage"] == 6
+    assert eventlog.peak_memory([bare])["jvm_heap"] == 0

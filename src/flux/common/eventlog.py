@@ -339,3 +339,43 @@ def summary(parsed: dict) -> dict:
         "join_stage": skewed.summary() if skewed else None,
         "all_stages": [s.summary() for s in stages],
     }
+
+
+# ── 실행기 메모리 ─────────────────────────────────────────────
+
+MEMORY_METRICS = {
+    "jvm_heap": "JVMHeapMemory",
+    "execution": "OnHeapExecutionMemory",
+    "storage": "OnHeapStorageMemory",
+    "gc_ms": "TotalGCTime",
+}
+
+
+def peak_memory(events) -> dict:
+    """잡이 도는 동안 실행기가 찍은 최고 메모리.
+
+    태스크가 끝날 때마다 그 실행기의 지표가 함께 남는다(`Task Executor Metrics`).
+    전부 훑어 가장 큰 값을 고른다.
+
+    셋을 나눠 보는 이유가 있다. `storage`는 캐시와 **브로드캐스트 블록**이 올라가는
+    자리라 차원을 복사하는 비용이 여기 찍힌다. `execution`은 정렬과 해시 조인이
+    쓰는 자리다. `jvm_heap`은 둘을 포함한 힙 전체인데 GC 시점에 따라 흔들린다.
+    `gc_ms`는 실행기마다 누적값이라 최댓값이 곧 그 실행기의 총 GC 시간이다.
+    """
+    peaks = {key: 0 for key in MEMORY_METRICS}
+    for line in events:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("Event") != TASK_END:
+            continue
+        metrics = event.get("Task Executor Metrics") or {}
+        for key, field_name in MEMORY_METRICS.items():
+            value = metrics.get(field_name, 0) or 0
+            if value > peaks[key]:
+                peaks[key] = value
+    return peaks
