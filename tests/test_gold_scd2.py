@@ -226,6 +226,58 @@ def test_여는_줄은_정확히_하나씩이다():
     assert staged_keys(staged).count(None) == 2
 
 
+# ── 자리만 잡아 둔 줄은 제자리에서 채운다 ──────────────────
+
+STAND_IN = "(알 수 없는 아티스트)"
+
+
+def stand_in(current):
+    return current.get("name") == STAND_IN
+
+
+def test_자리_줄에_진짜_이름이_오면_한_줄로_채운다():
+    """차원에 없던 아티스트는 이름 자리만 잡아 둔다. 다음 릴리스에 진짜 이름이
+    오면 그것은 개명이 아니라 **몰랐던 것을 알게 된 것**이다.
+
+    개명처럼 옛 줄을 닫고 새 줄을 열면, 그날 이전의 청취가 "(알 수 없는 아티스트)"
+    라는 이름을 가졌던 것처럼 이력이 남는다. 그렇게 불린 적은 없다. 그래서 닫지
+    않고 자연키로 한 번만 보내 제자리에서 덮는다.
+    """
+    staged = scd2.stage({MBID: row(name=STAND_IN, sort_name=None)},
+                        {MBID: row(name="Prince")}, stand_in=stand_in)
+    assert staged_keys(staged) == [MBID]
+
+
+def test_진짜_개명은_자리_판정이_있어도_두_줄이다():
+    """판정 함수를 넘겨도 진짜 이름끼리의 변화는 그대로 이력이 된다."""
+    staged = scd2.stage({MBID: row(name="Prince")}, {MBID: row(name="TAFKAP")},
+                        stand_in=stand_in)
+    assert staged_keys(staged) == [MBID, None]
+
+
+def test_자리_줄이_그대로면_아무것도_안_보낸다():
+    """다음 릴리스에도 그 아티스트가 없으면 자리는 자리로 남는다."""
+    current = {MBID: row(name=STAND_IN, sort_name=None)}
+    assert scd2.stage(current, {}, stand_in=stand_in) == []
+
+
+def test_판정_함수를_안_넘기면_예전처럼_두_줄이다():
+    """기존 호출부가 조용히 다르게 동작하지 않게 기본값은 예전 규칙이다."""
+    staged = scd2.stage({MBID: row(name=STAND_IN, sort_name=None)},
+                        {MBID: row(name="Prince")})
+    assert staged_keys(staged) == [MBID, None]
+
+
+def test_섞여_있으면_자리는_한_줄_개명은_두_줄_새것은_한_줄이다():
+    staged = scd2.stage(
+        {MBID: row(name=STAND_IN, sort_name=None), OTHER: row(name="Prince")},
+        {MBID: row(name="채워진 이름"), OTHER: row(name="TAFKAP"),
+         "new": row(name="새 아티스트")},
+        stand_in=stand_in,
+    )
+    assert staged_keys(staged) == [MBID, OTHER, None, None]
+
+
 # ── 닫을 수 있는가 ──────────────────────────────────────────
 
 def test_열린_날짜보다_뒤에서만_닫을_수_있다():

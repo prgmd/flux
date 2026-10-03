@@ -462,33 +462,32 @@ def test_placeholder를_넣으면_이름이_붙는다(spark, warehouse):
     }
 
 
-def test_placeholder를_닫으면_과거_청취에_거짓_이력이_남는다(spark, warehouse):
-    """**아직 정하지 않은 것을 드러내는 테스트다.** 지금 동작을 고정한다.
-
-    placeholder는 "아는 것이 MBID뿐"이라는 뜻이다. 다음 릴리스에 진짜 이름이
-    들어오면 SCD2 병합이 그것을 **개명으로 취급해** placeholder 줄을 닫고
-    새 줄을 연다.
-
-    그 결과 1970-01-01 ~ 릴리스일 구간이 "(알 수 없는 아티스트)"라는
-    **이름을 가진 이력**이 된다. 개명 전 청취를 조회하면 그 이름이 나온다.
-    이 차원이 답하려는 질문은 "그때 뭐라고 불렸는가"인데, 그때 그렇게 불린
-    적은 없다. 우리가 몰랐을 뿐이다.
-
-    **모른다는 것과 그렇게 불렸다는 것은 다르다.** 이력이 아니라 무지이므로
-    Type 1로 덮는 것이 맞을 수 있다. 정하려면 dim에 없는 661개가 어떤 성격인지
-    (병합되어 사라진 것인지, 릴리스보다 새 것인지) 알아야 한다. 아직 재지 않았다
-    (docs/measurements/2026-09-15-fact-grain.md의 "아직 재지 않은 것").
-
-    지금 동작을 테스트로 고정해 둔다. 바꿀 때 무엇이 달라지는지 보이게 된다.
-    """
+def _with_placeholder(spark, warehouse):
+    """MBID_A는 진짜 줄, MBID_B는 팩트가 심은 자리 줄인 차원."""
     path = _create(spark, warehouse, [_artist(MBID_A, "가수")], at="2026-09-01")
-    listens = _listens(spark, [5], mbid=MBID_B)
-
     dim = spark.read.format("delta").load(path)
     fact_listens.placeholders(
-        fact_listens.missing_artists(listens, dim), dim
+        fact_listens.missing_artists(_listens(spark, [5], mbid=MBID_B), dim), dim
     ).write.format("delta").mode("append").save(path)
+    return path
 
+
+def test_placeholder에_진짜_이름이_오면_제자리에서_채운다(spark, warehouse):
+    """placeholder는 "아는 것이 MBID뿐"이라는 뜻이다. 다음 릴리스에 진짜 이름이
+    오면 그것은 개명이 아니라 몰랐던 것을 알게 된 것이다.
+
+    예전에는 개명으로 취급해 자리 줄을 닫고 새 줄을 열었다. 그러면 1970부터
+    릴리스일까지가 "(알 수 없는 아티스트)"라는 **이름을 가진 이력**이 되어, 그 사이
+    청취를 조회하면 그 이름이 나왔다. 그렇게 불린 적은 없다.
+
+    이제는 닫지 않고 제자리에서 덮는다(Type 1). 이력은 한 줄 그대로이고, 1970부터
+    유효한 그 줄이 진짜 이름을 갖게 되므로 **릴리스 전 청취도 진짜 이름**을 받는다.
+
+    661개가 어떤 성격인지(병합돼 사라진 MBID인지, 릴리스보다 새 아티스트인지)는
+    이 결정을 바꾸지 않는다. 승격은 다음 릴리스에 그 아티스트가 실제로 들어올
+    때만 일어난다. 병합돼 사라진 MBID는 다시 들어오지 않으니 승격될 일이 없다.
+    """
+    path = _with_placeholder(spark, warehouse)
     prepared = dim_artist.prepare(
         spark.createDataFrame(
             [_artist(MBID_A, "가수"), _artist(MBID_B, "이제 아는 가수")],
@@ -496,16 +495,62 @@ def test_placeholder를_닫으면_과거_청취에_거짓_이력이_남는다(sp
         at="2026-09-20", release="r2")
     dim_artist.merge(spark, path, prepared, at="2026-09-20")
 
-    # 릴리스 이후의 청취는 진짜 이름을 얻는다.
-    later = fact_listens.with_artist_name(
-        _listens(spark, [25], mbid=MBID_B),
-        spark.read.format("delta").load(path))
-    assert later.first()["artist_name"] == "이제 아는 가수"
+    dim = spark.read.format("delta").load(path)
+    rows = dim.filter(F.col(scd2.BUSINESS_KEY) == MBID_B).collect()
+    assert len(rows) == 1
+    only = rows[0]
+    assert only["name"] == "이제 아는 가수"
+    assert only[scd2.VALID_FROM] == scd2.FAR_PAST
+    assert only[scd2.VALID_TO] == scd2.FAR_FUTURE
+    assert only[scd2.IS_CURRENT]
+    assert only["_release"] == "r2"
 
-    # 릴리스 전의 청취는 placeholder 이름에 묶인 채로 남는다.
-    earlier = fact_listens.with_artist_name(
-        listens, spark.read.format("delta").load(path))
-    assert fact.is_placeholder(earlier.first()["artist_name"])
+    earlier = fact_listens.with_artist_name(_listens(spark, [5], mbid=MBID_B), dim)
+    later = fact_listens.with_artist_name(_listens(spark, [25], mbid=MBID_B), dim)
+    assert earlier.first()["artist_name"] == "이제 아는 가수"
+    assert later.first()["artist_name"] == "이제 아는 가수"
+    assert not any(dim_artist.invariants(spark, path).values())
+
+
+def test_채운_뒤의_개명은_보통의_이력이_된다(spark, warehouse):
+    """채워진 줄은 이제 진짜 이름이다. 그다음 바뀌면 그건 진짜 개명이다."""
+    path = _with_placeholder(spark, warehouse)
+    for name, at, release in (("이제 아는 가수", "2026-09-20", "r2"),
+                              ("개명한 가수", "2026-09-25", "r3")):
+        dim_artist.merge(spark, path, dim_artist.prepare(
+            spark.createDataFrame([_artist(MBID_B, name)], DIM_INPUT_SCHEMA),
+            at=at, release=release), at=at)
+
+    rows = (spark.read.format("delta").load(path)
+            .filter(F.col(scd2.BUSINESS_KEY) == MBID_B)
+            .orderBy(scd2.VALID_FROM).collect())
+    assert [(r["name"], r[scd2.VALID_FROM], r[scd2.VALID_TO]) for r in rows] == [
+        ("이제 아는 가수", scd2.FAR_PAST, "2026-09-25"),
+        ("개명한 가수", "2026-09-25", scd2.FAR_FUTURE),
+    ]
+
+
+def test_자리_줄을_채우는_줄_수도_scd2_stage와_같다(spark, warehouse):
+    """개명 하나, 자리 채우기 하나, 신규 하나면 2 + 1 + 1 = 4줄이다."""
+    path = _with_placeholder(spark, warehouse)
+    incoming = [_artist(MBID_A, "개명한 가수"), _artist(MBID_B, "이제 아는 가수"),
+                _artist(MBID_C, "신인")]
+    prepared = dim_artist.prepare(
+        spark.createDataFrame(incoming, DIM_INPUT_SCHEMA),
+        at="2026-09-20", release="r2")
+
+    def as_tracked(rows):
+        return {r[0]: {"name": r[1], "sort_name": r[2]} for r in rows}
+
+    current = {MBID_A: {"name": "가수", "sort_name": "가수"},
+               MBID_B: {"name": fact.PLACEHOLDER_NAME, "sort_name": None}}
+    expected = scd2.stage(current, as_tracked(incoming),
+                          stand_in=lambda row: fact.is_placeholder(row["name"]))
+
+    staged = dim_artist._staged(spark, path, prepared)
+    assert staged.count() == len(expected) == 4
+    keys = sorted((row[scd2.MERGE_KEY] or "") for row in staged.collect())
+    assert keys == sorted((key or "") for key, _ in expected)
 
 
 # ── 사전 확인용 월 제한 ──────────────────────────────────────

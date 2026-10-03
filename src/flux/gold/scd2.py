@@ -130,7 +130,7 @@ def open_new(key: str, values: tuple, *, at: str) -> Version:
 MERGE_KEY = "_merge_key"
 
 
-def stage(current: dict, incoming: dict) -> list:
+def stage(current: dict, incoming: dict, *, stand_in=None) -> list:
     """MERGE에 넘길 줄을 만든다. 무엇을 몇 줄로 보낼지가 여기서 정해진다.
 
     `current`는 지금 열려 있는 줄, `incoming`은 이번에 들어온 줄이다. 둘 다
@@ -141,6 +141,12 @@ def stage(current: dict, incoming: dict) -> list:
     그래서 값이 바뀐 아티스트는 두 줄로 나간다 — 하나는 닫으러, 하나는 열러.
 
     한 대상 행을 한 번만 건드리는 MERGE로 두 가지 일을 시키는 방법이다.
+
+    `stand_in`은 현재 줄이 **진짜 값이 아니라 자리만 잡아 둔 줄**인지 묻는 함수다.
+    차원에 없던 아티스트의 placeholder가 그렇다. 그 줄에 진짜 값이 오면 개명이
+    아니라 몰랐던 것을 알게 된 것이므로, 닫지 않고 **제자리에서 채운다**(Type 1).
+    자연키로 한 번만 보내고, MERGE가 대상이 자리 줄인 것을 보고 덮어쓴다.
+    닫아 버리면 그날 이전의 청취가 자리 이름을 가졌던 것처럼 이력이 남는다.
     """
     staged = []
     for key, row in incoming.items():
@@ -148,7 +154,8 @@ def stage(current: dict, incoming: dict) -> list:
             staged.append((None, row))
         elif changed(current[key], row):
             staged.append((key, row))
-            staged.append((None, row))
+            if not (stand_in and stand_in(current[key])):
+                staged.append((None, row))
     return staged
 
 

@@ -14,7 +14,7 @@ from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from flux.gold import scd2
+from flux.gold import fact, scd2
 
 # Silver에서 그대로 옮기는 값들. 이력을 만들지는 않지만 차원에 필요하다.
 CARRIED_COLUMNS = (
@@ -84,6 +84,21 @@ def _hint(df: DataFrame, broadcast: bool) -> DataFrame:
 
 
 _CUR_VALID_FROM = f"_cur_{scd2.VALID_FROM}"
+
+FILLED_COLUMNS = tuple(
+    name for name in COLUMNS
+    if name not in (scd2.BUSINESS_KEY, scd2.VALID_FROM, scd2.VALID_TO,
+                    scd2.IS_CURRENT)
+)
+
+
+def _stand_in(column):
+    """이 이름이 자리 줄의 이름인가. scd2.stage의 stand_in과 같은 판단이다.
+
+    `eqNullSafe`로 비교한다. `==`이면 이름이 NULL인 줄에서 판정이 NULL이 되어
+    채우기 쪽에도 닫기 쪽에도 안 걸리고 **조용히 빠진다.**
+    """
+    return column.eqNullSafe(F.lit(fact.PLACEHOLDER_NAME))
 
 
 def _marked(spark: SparkSession, path: str, prepared: DataFrame,
@@ -164,15 +179,20 @@ def _staged(spark: SparkSession, path: str, prepared: DataFrame,
     """
     marked, differs = _marked(spark, path, prepared, broadcast=broadcast)
 
-    changed_rows = marked.filter(F.col("_k").isNotNull() & differs).select(*COLUMNS)
+    changed_rows = marked.filter(F.col("_k").isNotNull() & differs)
+    stub = _stand_in(F.col("_cur_name"))
+    renamed = changed_rows.filter(~stub).select(*COLUMNS)
+    filled = changed_rows.filter(stub).select(*COLUMNS)
     new_rows = marked.filter(F.col("_k").isNull()).select(*COLUMNS)
 
-    # 바뀐 아티스트는 두 번 보낸다. 한 번은 닫으러, 한 번은 열러.
-    to_close = changed_rows.withColumn(scd2.MERGE_KEY, F.col(scd2.BUSINESS_KEY))
-    to_open = changed_rows.withColumn(scd2.MERGE_KEY, F.lit(None).cast("string"))
+    # 개명은 닫으러 한 번, 열러 한 번 보내고, 자리 채우기는 한 번만 보낸다.
+    to_close = renamed.withColumn(scd2.MERGE_KEY, F.col(scd2.BUSINESS_KEY))
+    to_open = renamed.withColumn(scd2.MERGE_KEY, F.lit(None).cast("string"))
+    to_fill = filled.withColumn(scd2.MERGE_KEY, F.col(scd2.BUSINESS_KEY))
     brand_new = new_rows.withColumn(scd2.MERGE_KEY, F.lit(None).cast("string"))
 
-    return to_close.unionByName(to_open).unionByName(brand_new)
+    return (to_close.unionByName(to_open).unionByName(to_fill)
+            .unionByName(brand_new))
 
 
 def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str,
@@ -187,6 +207,12 @@ def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str,
 
     쓰기 전에 `unclosable`을 본다. 빈 유효 구간을 만들 상황이면 **아무것도 쓰지
     않고 거부한다.** 쓴 뒤에 불변식으로 잡으면 이미 망가진 차원을 되돌려야 한다.
+
+    만난 줄을 다루는 절이 둘이다. **대상이 자리 줄이면 제자리에서 채우고**
+    (`FILLED_COLUMNS`만 덮는다), 아니면 닫는다. Delta는 조건이 맞는 첫 절 하나만
+    적용하므로 채우기 절이 앞에 있어야 한다. 채울 때 유효 구간과 현재 여부는 그대로
+    둔다. 채워진 줄도 "아는 한 늘 그랬다"(1970부터)인 채로 남아야 그 아티스트의
+    옛 청취가 새 이름을 받는다.
     """
     blocked = unclosable(spark, path, prepared, at=at, broadcast=broadcast)
     if blocked:
@@ -203,6 +229,9 @@ def merge(spark: SparkSession, path: str, prepared: DataFrame, *, at: str,
         .merge(staged.alias("s"),
                f"t.{scd2.BUSINESS_KEY} = s.{scd2.MERGE_KEY} "
                f"AND t.{scd2.IS_CURRENT} = true")
+        .whenMatchedUpdate(
+            condition=_stand_in(F.col("t.name")),
+            set={name: F.col(f"s.{name}") for name in FILLED_COLUMNS})
         .whenMatchedUpdate(
             set={scd2.VALID_TO: F.lit(at), scd2.IS_CURRENT: F.lit(False)})
         .whenNotMatchedInsert(
