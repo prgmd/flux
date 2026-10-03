@@ -68,6 +68,16 @@ def test_계층별_경로를_만든다(root):
     assert config.silver("listens_normalized") == "file:///data/flux/silver/listens_normalized"
     assert config.gold("fact_listens") == "file:///data/flux/gold/fact_listens"
     assert config.dumps("listenbrainz", "full") == "file:///data/flux/dumps/listenbrainz/full"
+    assert config.scratch("drill", "dim_artist") == "file:///data/flux/scratch/drill/dim_artist"
+
+
+def test_임시_사본은_계층_디렉터리_밖에_있다(root):
+    """드릴이 끝나면 사본 디렉터리를 통째로 지운다. 그 안에 운영 테이블이 있으면
+    함께 지워진다."""
+    root("file:///data/flux")
+    work = config.scratch("drill")
+    for layer in (config.BRONZE, config.SILVER, config.GOLD):
+        assert not work.startswith(config.path(layer) + "/")
 
 
 def test_조각이_없으면_루트를_돌려준다(root):

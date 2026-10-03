@@ -16,6 +16,7 @@ BRONZE = "bronze"
 SILVER = "silver"
 GOLD = "gold"
 DUMPS = "dumps"
+SCRATCH = "scratch"
 
 
 class StorageConfigError(RuntimeError):
@@ -94,6 +95,17 @@ def gold(table: str) -> str:
 
 def dumps(*segments: str) -> str:
     return path(DUMPS, *segments)
+
+
+def scratch(*segments: str) -> str:
+    """드릴이 운영 테이블 대신 쓰는 임시 사본의 자리.
+
+    드릴은 운영 테이블을 바꿨다가 시점 조회로 되돌리는 방식이었다. Delta는 지운
+    파일 보존 기간(기본 7일)보다 오래된 버전으로의 시점 조회를 막으므로, 차원이
+    한동안 안 바뀌었으면 **되돌리기가 실패하고 운영 테이블이 바뀐 채로 남는다.**
+    실제로 placeholder 승격 드릴이 그렇게 끝났다. 사본에서 하면 되돌릴 것이 없다.
+    """
+    return path(SCRATCH, *segments)
 
 
 def is_local() -> bool:

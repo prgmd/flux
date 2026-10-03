@@ -8,17 +8,20 @@
 실제 개명을 기다릴 수는 없다. 다음 릴리스에 그런 아티스트가 있을지도 모르고,
 있어도 몇 달 뒤다. **일어날 일을 만들어 넣어 보는 것**이 유일한 방법이다.
 
-차원을 건드리므로 확인이 끝나면 **원래대로 되돌린다.** 되돌리는 방법은
-Delta의 시점 조회다 — 주입 직전 버전으로 복원한다.
+**운영 차원은 건드리지 않는다.** 차원을 임시 사본으로 복사해 거기에 주입하고, 끝나면
+사본을 지운다. 처음에는 운영 차원에 주입하고 Delta의 시점 조회로 주입 직전 버전을
+복원했는데, Delta는 지운 파일 보존 기간(7일)보다 오래된 버전으로의 시점 조회를
+막는다. 차원이 한동안 안 바뀌었으면 되돌리기가 실패하고 운영 차원이 바뀐 채로
+남는다. placeholder 승격 드릴이 실제로 그렇게 끝났다(flux.common.config.scratch).
 
     docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \
         python scripts/gold_rename_drill.py
 """
 
 import argparse
+import shutil
 import sys
 
-from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
 from flux.common import config
@@ -33,19 +36,21 @@ DRILL_DATE = "2026-12-25"
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true",
-                        help="확인 후 되돌리지 않는다. 조사할 때만 쓴다")
+                        help="끝나도 사본을 지우지 않는다. 조사할 때만 쓴다")
     args = parser.parse_args()
 
     silver_path = config.silver(SILVER_TABLE)
     gold_path = config.gold(scd2.TABLE_NAME)
 
+    work_path = config.scratch("rename-drill", scd2.TABLE_NAME)
+    work_dir = config.local_root() / config.SCRATCH / "rename-drill"
+
     spark = spark_session("flux-rename-drill", shuffle_partitions=64, memory="6g")
     try:
-        table = DeltaTable.forPath(spark, gold_path)
-        before_version = table.history(1).select("version").first()["version"]
-        print(f"주입 전 Delta 버전 : {before_version}")
-
         dim = spark.read.format("delta").load(gold_path)
+        rows_before = dim.count()
+        dim.write.format("delta").mode("overwrite").save(work_path)
+        print(f"사본               : {work_path}")
         target = (
             dim.filter(F.col(scd2.IS_CURRENT) & F.col("name").isNotNull())
                .orderBy(scd2.BUSINESS_KEY)
@@ -68,9 +73,8 @@ def main() -> int:
         )
         prepared = dim_artist.prepare(renamed, at=DRILL_DATE, release=release)
 
-        rows_before = dim.count()
-        dim_artist.merge(spark, gold_path, prepared, at=DRILL_DATE)
-        after = spark.read.format("delta").load(gold_path)
+        dim_artist.merge(spark, work_path, prepared, at=DRILL_DATE)
+        after = spark.read.format("delta").load(work_path)
         rows_after = after.count()
 
         print(f"이력 줄 : {rows_before:,} → {rows_after:,}  "
@@ -99,12 +103,17 @@ def main() -> int:
                 history[0][scd2.VALID_TO] == history[1][scd2.VALID_FROM],
             "다른 아티스트는 그대로다": rows_after - rows_before == 1,
         }
+        production = spark.read.format("delta").load(gold_path)
+        checks["운영 차원은 그대로다"] = (
+            production.count() == rows_before
+            and production.filter(F.col(scd2.BUSINESS_KEY) == mbid)
+            .first()["name"] == old_name)
         print()
         print("확인")
         for label, ok in checks.items():
             print(f"  {label:22} {'통과' if ok else '실패'}")
 
-        invariants = dim_artist.invariants(spark, gold_path)
+        invariants = dim_artist.invariants(spark, work_path)
         print()
         print("SCD2 불변식")
         for name, value in invariants.items():
@@ -123,24 +132,8 @@ def main() -> int:
             ],
             "checks": {k: bool(v) for k, v in checks.items()},
             "invariants": invariants,
-            "restored_to_version": None if args.keep else before_version,
+            "worked_on_copy": True,
         })
-
-        if not args.keep:
-            # 시점 조회로 주입 전 상태를 읽어 통째로 덮어쓴다.
-            # Delta가 옛 버전을 지우지 않기 때문에 가능한 복원이다.
-            print()
-            print(f"버전 {before_version}으로 되돌린다")
-            (
-                spark.read.format("delta")
-                .option("versionAsOf", before_version).load(gold_path)
-                .write.format("delta").mode("overwrite").save(gold_path)
-            )
-            restored = spark.read.format("delta").load(gold_path)
-            print(f"복원 후 이력 줄 : {restored.count():,}")
-            if restored.count() != rows_before:
-                print("복원이 어긋났다")
-                return 1
 
         failed = [k for k, v in checks.items() if not v]
         if failed or any(invariants.values()):
@@ -152,6 +145,8 @@ def main() -> int:
         return 0
     finally:
         spark.stop()
+        if not args.keep and work_dir.exists():
+            shutil.rmtree(work_dir)
 
 
 if __name__ == "__main__":
