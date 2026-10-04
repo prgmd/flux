@@ -30,7 +30,6 @@
 
 import argparse
 import sys
-from pathlib import Path
 
 from flux.common import config, eventlog
 from flux.gold import skew

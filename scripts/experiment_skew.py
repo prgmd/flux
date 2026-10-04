@@ -27,7 +27,6 @@ OS 페이지 캐시가 더워져 **나중에 돈 구성이 유리해진다.** �
 """
 
 import argparse
-import json
 import shutil
 import sys
 import time

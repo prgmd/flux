@@ -38,7 +38,6 @@ def main() -> int:
     parser.add_argument("--sample", type=int, default=200_000)
     args = parser.parse_args()
 
-    root = config.local_root()
     spark = spark_session("flux-inspect-mbid", memory="6g")
     try:
         bronze = spark.read.format("delta").load(config.bronze(bronze_schema.TABLE_NAME))

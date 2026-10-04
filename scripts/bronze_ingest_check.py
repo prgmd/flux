@@ -11,7 +11,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pyspark.sql import functions as F
 
 from flux.common.spark import session as spark_session
 from flux.bronze import ingest, schema

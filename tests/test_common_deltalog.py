@@ -123,7 +123,6 @@ def test_체크포인트_표시가_깨졌으면_없는_것으로_본다(tmp_path
 def test_체크포인트_뒤의_커밋만_적용한다(tmp_path):
     """체크포인트가 그 앞을 이미 담고 있다. 다시 적용하면 지워진 것이 살아난다."""
     t = table(tmp_path, [add("a.parquet")], [remove("a.parquet")])
-    log = t / deltalog.LOG_DIR
     assert [p.name for p in deltalog.commits(t, after=0)] == [f"{1:020d}.json"]
 
 

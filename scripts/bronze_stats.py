@@ -35,7 +35,7 @@ def gb(size: int) -> float:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    args = parser.parse_args()
+    parser.parse_args()
 
     root = config.local_root()
     bronze_uri = config.bronze(bronze_schema.TABLE_NAME)

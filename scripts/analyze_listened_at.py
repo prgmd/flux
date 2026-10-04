@@ -29,9 +29,8 @@ TINY_ROWS = 100_000
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    args = parser.parse_args()
+    parser.parse_args()
 
-    root = config.local_root()
     spark = spark_session("flux-listened-at", memory="4g")
     try:
         df = (

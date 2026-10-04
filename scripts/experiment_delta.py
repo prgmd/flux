@@ -41,7 +41,7 @@ from pyspark.sql import functions as F
 
 from flux.common import config, deltalog
 from flux.common.spark import session as spark_session
-from flux.gold import fact, mart, mart_build
+from flux.gold import mart
 
 CODECS = ("snappy", "zstd")
 
@@ -150,9 +150,9 @@ def main() -> int:
 
         plans = [
             ("as_written", None, "쓴 그대로"),
-            ("optimized", f"OPTIMIZE delta.`{{path}}`", "OPTIMIZE"),
+            ("optimized", "OPTIMIZE delta.`{path}`", "OPTIMIZE"),
             ("zordered",
-             f"OPTIMIZE delta.`{{path}}` ZORDER BY (artist_mbid)", "Z-Order"),
+             "OPTIMIZE delta.`{path}` ZORDER BY (artist_mbid)", "Z-Order"),
         ]
         for key, sql, label in plans:
             target = str(root / "experiments" / f"mart_{key}")

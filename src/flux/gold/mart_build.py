@@ -14,7 +14,7 @@ pyspark를 부른다. 판단은 flux.gold.skew에 있다.
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from flux.gold import fact, mart, scd2, skew
+from flux.gold import fact, scd2, skew
 
 
 def _listens(spark: SparkSession, fact_path: str,
