@@ -73,7 +73,7 @@ def main() -> int:
         "elapsed_seconds": round(time.time() - started, 1),
         "tables": results,
     }
-    config.write_measurement(f"musicbrainz-{dump.parent.name}", payload)
+    path = config.write_measurement(f"musicbrainz-{dump.parent.name}", payload)
 
     print(f"\n총 {len(results)}개 테이블, {payload['elapsed_seconds']}초")
     print(f"기록: {path}")
