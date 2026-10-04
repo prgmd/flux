@@ -157,8 +157,8 @@ def test_같은_줄이_다른_파일_배치로_와도_번호가_같다(spark, tm
     whole = tmp_path / "whole.listens"
     whole.write_text("\n".join(LINES), encoding="utf-8")
     first, second = tmp_path / "a.listens", tmp_path / "b.listens"
-    first.write_text("\n".join(LINES[:3]), encoding="utf-8")
-    second.write_text("\n".join(LINES[3:]), encoding="utf-8")
+    first.write_text("\n".join(LINES[:2]), encoding="utf-8")
+    second.write_text("\n".join(LINES[2:]), encoding="utf-8")
 
     def ids(frame):
         valid, rejected = ingest.split(frame)
