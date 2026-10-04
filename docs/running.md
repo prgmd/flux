@@ -118,6 +118,7 @@ delta-spark를 다시 받는다.
 | `scripts/drills/` | 일부러 상황을 만들어 넣고 확인하는 점검. **운영 표는 읽기만 하고 임시 사본에서 한다** | `gold_rename_drill.py`, `silver_quarantine_drill.py` |
 | `scripts/experiments/` | 6.5 표의 실험과 그 도구 | `experiment_skew.py`, `rederive_skew.py` |
 | `scripts/investigations/` | 무언가를 정하기 전에 한 번 재 본 조사. 다시 돌릴 일은 드물다 | `measure_fact_grain.py`, `inspect_mbid.py` |
+| `scripts/migrations/` | 이미 쌓인 표를 새 규칙으로 한 번 옮기는 이전. 운영 표는 읽기만 하고 다른 루트에 쓴다 | `rehash_record_id.py` |
 | `scripts/` | 실행 래퍼 | `spark_run.sh` |
 
 ### 단계별
