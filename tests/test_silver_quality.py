@@ -179,3 +179,42 @@ def test_앞의_이름이_못_쓸_값이면_뒤를_본다():
     document = doc(timestamp=LISTENED)
     document["listened_at"] = "깨짐"
     assert quality.listened_at_of(document) == LISTENED
+
+
+# ── 격리 드릴의 불량 견본 ───────────────────────────────────
+
+def test_불량_견본은_규칙마다_하나씩_네_종류다():
+    """격리 드릴이 Bronze에 넣는 행이다. 규칙 넷을 하나씩 건드린다."""
+    samples = quality.spoiled(doc(), ingested_at=INGESTED)
+    assert sorted(s.reason for s in samples) == sorted([
+        Reason.USER_NAME_MISSING, Reason.LISTENED_AT_BEFORE_1970,
+        Reason.LISTENED_AT_FUTURE, Reason.METADATA_MISSING,
+    ])
+
+
+def test_불량_견본은_순수_판정에서도_그_사유로_걸린다():
+    """드릴은 Spark가 이 사유를 붙이는지 본다. 기대값이 순수 판정과 같아야
+    Spark와 순수 규칙이 갈라졌을 때 드릴이 잡는다."""
+    for sample in quality.spoiled(doc(), ingested_at=INGESTED):
+        verdict = quality.judge(sample.document, ingested_at=INGESTED)
+        assert verdict == quality.Verdict(False, sample.reason), sample.label
+
+
+def test_불량_견본의_원본은_성한_레코드여야_한다():
+    """원본부터 걸리면 견본이 무엇 때문에 걸렸는지 알 수 없다."""
+    with pytest.raises(ValueError):
+        quality.spoiled(doc(user_name=""), ingested_at=INGESTED)
+
+
+def test_불량_견본은_원본을_바꾸지_않는다():
+    original = doc()
+    before = repr(original)
+    quality.spoiled(original, ingested_at=INGESTED)
+    assert repr(original) == before
+
+
+def test_시각_견본은_원본이_쓰는_키를_고친다():
+    """덤프는 timestamp를 쓴다. listened_at 키를 새로 붙이면 원본과 모양이 달라진다."""
+    samples = {s.reason: s for s in quality.spoiled(doc(), ingested_at=INGESTED)}
+    early = samples[Reason.LISTENED_AT_BEFORE_1970].document
+    assert "listened_at" not in early and early["timestamp"] < 0

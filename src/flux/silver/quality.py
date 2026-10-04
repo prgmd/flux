@@ -108,3 +108,41 @@ def judge(document, *, ingested_at) -> Verdict:
         return Verdict(False, Reason.METADATA_MISSING)
 
     return PASS
+
+
+@dataclass(frozen=True)
+class Spoiled:
+    """격리 드릴에 넣을 불량 레코드 하나와 그것이 걸려야 할 사유."""
+
+    label: str
+    document: dict
+    reason: str
+
+
+DAY_SECONDS = 86_400
+
+
+def spoiled(document: dict, *, ingested_at: int) -> list:
+    """성한 레코드 하나로 규칙마다 하나씩 걸리는 불량 레코드를 만든다.
+
+    격리 경로는 실데이터에서 한 번도 돈 적이 없다. 31일치 1억 5,571만 행에서
+    격리가 0건이었기 때문이다. 0건이 "규칙이 맞다"인지 "규칙이 안 돈다"인지는
+    걸릴 행을 일부러 넣어 봐야 가른다.
+
+    원본에서 한 곳만 고친다. 여러 곳을 고치면 어느 규칙에 걸렸는지 흐려진다.
+    청취 시각은 원본이 쓰는 키(덤프는 `timestamp`)를 그대로 고친다.
+    """
+    if judge(document, ingested_at=ingested_at) != PASS:
+        raise ValueError("원본이 이미 걸린다. 성한 레코드로 만들어야 한다")
+    time_key = ("listened_at" if _as_int(document.get("listened_at")) is not None
+                else "timestamp")
+    return [
+        Spoiled("이름 없음", {**document, "user_name": ""},
+                Reason.USER_NAME_MISSING),
+        Spoiled("1970 이전", {**document, time_key: -DAY_SECONDS},
+                Reason.LISTENED_AT_BEFORE_1970),
+        Spoiled("미래", {**document, time_key: ingested_at + DAY_SECONDS},
+                Reason.LISTENED_AT_FUTURE),
+        Spoiled("메타데이터가 문자열", {**document, "track_metadata": "문자열"},
+                Reason.METADATA_MISSING),
+    ]
