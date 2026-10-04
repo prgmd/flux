@@ -122,9 +122,10 @@ def with_artist_name(listens: DataFrame, dim: DataFrame,
 
     **브로드캐스트는 플래그로 둔다.** 붙는 것은 이력 전체이고, `F.broadcast()`는
     `autoBroadcastJoinThreshold`를 무시하고 강제하므로 표가 자라도 코드가
-    조용하다. 기본값은 지금 동작 그대로 두고 S4의 조인 전략 비교에서 잰다.
-    청취에 실제로 쓰인 아티스트가 차원의 10.5%뿐이므로, 조인 전에 차원을
-    거르는 쪽이 이길 수도 있다(docs/measurements/2026-09-15-fact-grain.md).
+    조용하다. S4에서 쟀다(docs/measurements/2026-10-02-broadcast.md). 로컬에서
+    시간은 broadcast, shuffle, 차원 선필터가 같았고, broadcast는 저장 메모리를
+    948MB 쓴다. 쓰이는 아티스트(차원의 10.5%)만 남겨 거르면 183MB다. 지금 클러스터
+    실행기는 통합 메모리가 456MB라 broadcast가 거기 안 들어간다.
     """
     versions = dim.select(
         F.col(scd2.BUSINESS_KEY).alias("_k"),
