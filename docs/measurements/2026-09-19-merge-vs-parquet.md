@@ -106,7 +106,7 @@ Path(staged).rename(target)
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/experiment_merge.py
+  python scripts/experiments/experiment_merge.py
 ```
 
 약 4분. 결과는 데이터 루트의 `measurements/merge-experiment.json`에 있다.

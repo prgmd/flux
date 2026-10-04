@@ -91,7 +91,7 @@
 ```
 docker run --rm -m 12g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/measure_quality_rules.py --show-malformed 10
+  python scripts/investigations/measure_quality_rules.py --show-malformed 10
 ```
 
 결과는 데이터 루트의 `measurements/quality-rules.json`에 있다.

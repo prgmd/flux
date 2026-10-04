@@ -73,7 +73,7 @@
 ```
 docker run --rm -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/analyze_listened_at.py
+  python scripts/investigations/analyze_listened_at.py
 ```
 
 결과는 데이터 루트의 `measurements/listened-at-distribution.json`에 있다.

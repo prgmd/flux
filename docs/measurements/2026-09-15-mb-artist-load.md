@@ -96,10 +96,10 @@ SCD2의 주된 목적이 그것이므로 설계는 유지한다.
 ## 재현
 
 ```
-FLUX_STORAGE_ROOT=<데이터 루트> python scripts/extract_mb_tables.py
+FLUX_STORAGE_ROOT=<데이터 루트> python scripts/pipeline/extract_mb_tables.py
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/silver_musicbrainz.py
+  python scripts/pipeline/silver_musicbrainz.py
 ```
 
 결과는 데이터 루트의 `measurements/mb-artist-load.json`에 있다.

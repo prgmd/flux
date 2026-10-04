@@ -109,7 +109,7 @@ fact.filter(artist_mbid.isNotNull())
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/explain_plans.py
+  python scripts/experiments/explain_plans.py
 ```
 
 계획을 뽑을 뿐이라 데이터를 읽지 않는다. 1분 안에 끝난다.

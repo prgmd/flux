@@ -104,19 +104,23 @@ def test_단위를_읽기_좋게_바꾼다():
 
 def test_컨테이너_이름은_날짜로_구분된다():
     """뒤에서 자르면 모든 덤프가 'remental'로 끝나 같은 이름이 된다."""
-    import sys
-    sys.path.insert(0, "scripts")
-    from bronze_backfill import container_tag
-
-    a = container_tag("listenbrainz-dump-2621-20260808-000003-incremental")
-    b = container_tag("listenbrainz-dump-2622-20260809-000002-incremental")
+    a = backfill.container_tag("listenbrainz-dump-2621-20260808-000003-incremental")
+    b = backfill.container_tag("listenbrainz-dump-2622-20260809-000002-incremental")
     assert a == "20260808" and b == "20260809"
     assert a != b
 
 
 def test_날짜가_없는_이름도_이름을_돌려준다():
-    import sys
-    sys.path.insert(0, "scripts")
-    from bronze_backfill import container_tag
+    assert backfill.container_tag("이상한-이름") != ""
 
-    assert container_tag("이상한-이름") != ""
+
+def test_적재가_남기는_기록_이름을_백필과_같은_상수로_만든다():
+    """백필은 `MEASUREMENT_PREFIX`로 시작하는 기록을 보고 "이 덤프는 적재 끝"을 판단한다.
+    적재 스크립트가 같은 글자를 따로 적어 두면, 한쪽만 바뀌었을 때 백필이 모든
+    덤프를 다시 적재하거나 다 건너뛴다. 스크립트는 pyspark를 불러 호스트에서
+    임포트되지 않으므로 원문으로 확인한다."""
+    from pathlib import Path
+
+    source = Path("scripts/pipeline/bronze_ingest.py").read_text(encoding="utf-8")
+    assert "backfill.MEASUREMENT_PREFIX" in source
+    assert 'write_measurement(f"bronze-' not in source

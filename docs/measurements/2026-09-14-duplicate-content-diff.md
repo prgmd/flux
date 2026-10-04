@@ -161,7 +161,7 @@ Last.fm이 같은 곡을 나중에 **다른 MusicBrainz 항목으로 매칭**했
 ```
 docker run --rm -m 12g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/inspect_duplicate_diff.py --keys 400
+  python scripts/investigations/inspect_duplicate_diff.py --keys 400
 ```
 
 결과는 데이터 루트의 `measurements/duplicate-diff.json`에 있다.

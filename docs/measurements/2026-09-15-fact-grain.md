@@ -98,7 +98,7 @@ dim에서 찾을 수 없다.
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/measure_fact_grain.py
+  python scripts/investigations/measure_fact_grain.py
 ```
 
 소요 779초. 결과는 데이터 루트의 `measurements/fact-grain.json`에 있다.

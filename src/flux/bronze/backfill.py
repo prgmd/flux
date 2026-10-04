@@ -84,3 +84,19 @@ def format_bytes(size: int) -> str:
     if size >= 1024 ** 2:
         return f"{size / 1024 ** 2:.0f}MB"
     return f"{size:,}B"
+
+
+def container_tag(dump: str) -> str:
+    """덤프 이름에서 날짜 부분만 뽑아 컨테이너 이름에 쓴다.
+
+    뒤에서 잘라 내면 모든 덤프가 "remental"로 끝나 같은 이름이 된다.
+    이름이 겹치면 무엇이 도는 중인지 밖에서 알 수 없다.
+
+    처음엔 스크립트(`scripts/pipeline/bronze_backfill.py`) 안에 있었고, 테스트가
+    `sys.path`에 `scripts`를 끼워 넣어 그것을 빌려 썼다. 테스트할 판단은 스크립트가
+    아니라 모듈에 둔다. 스크립트 폴더를 옮기자 그 테스트가 깨질 뻔했다.
+    """
+    for part in dump.split("-"):
+        if len(part) == 8 and part.isdigit():
+            return part
+    return dump[:12]

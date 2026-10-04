@@ -5,7 +5,7 @@
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/gold_dim_artist.py --at 2026-09-15
+  python scripts/pipeline/gold_dim_artist.py --at 2026-09-15
 ```
 
 가운데 `...`이 감추고 있던 것이 저장소 마운트와 `PYTHONPATH`다. 그것이 없으면
@@ -47,7 +47,7 @@ docker build -t flux-spark -f docker/spark.Dockerfile .
 ## Spark 잡
 
 ```bash
-./scripts/spark_run.sh -m 10g -- python scripts/gold_fact_listens.py
+./scripts/spark_run.sh -m 10g -- python scripts/pipeline/gold_fact_listens.py
 ```
 
 `--` 앞은 `docker run` 옵션, 뒤는 컨테이너에서 돌릴 명령이다. 데이터 루트는
@@ -92,7 +92,7 @@ docker compose up -d spark-master spark-worker
 ./scripts/spark_run.sh -m 6g --network flux_default \
   -v "$PWD/docker/spark-conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro" \
   -e FLUX_SPARK_MASTER=spark://spark-master:7077 \
-  -- python scripts/experiment_skew.py --out skew-experiment-cluster
+  -- python scripts/experiments/experiment_skew.py --out skew-experiment-cluster
 ```
 
 컨테이너가 드라이버가 되고 워커가 실행기를 띄운다. 로컬 모드와 다른 점이 둘이다.
@@ -109,28 +109,44 @@ docker compose up -d spark-master spark-worker
 `spark-defaults.conf`는 의존 jar 캐시 자리를 고정한다. 빼면 실행할 때마다
 delta-spark를 다시 받는다.
 
+### 스크립트 폴더
+
+| 폴더 | 무엇 | 예 |
+| --- | --- | --- |
+| `scripts/pipeline/` | 매번 도는 잡. 수집, 추출, Bronze, Silver, Gold | `silver_build.py`, `gold_mart.py` |
+| `scripts/checks/` | 만든 결과를 대조하는 확인 | `bronze_verify_raw.py`, `oracle_mart.py` |
+| `scripts/drills/` | 일부러 상황을 만들어 넣고 확인하는 점검. **운영 표는 읽기만 하고 임시 사본에서 한다** | `gold_rename_drill.py`, `silver_quarantine_drill.py` |
+| `scripts/experiments/` | 6.5 표의 실험과 그 도구 | `experiment_skew.py`, `rederive_skew.py` |
+| `scripts/investigations/` | 무언가를 정하기 전에 한 번 재 본 조사. 다시 돌릴 일은 드물다 | `measure_fact_grain.py`, `inspect_mbid.py` |
+| `scripts/` | 실행 래퍼 | `spark_run.sh` |
+
 ### 단계별
 
 ```bash
 # S1 덤프 수급
-python scripts/fetch_incremental_range.py --days 31
-python scripts/fetch_musicbrainz.py
+python scripts/pipeline/fetch_incremental_range.py --days 31
+python scripts/pipeline/fetch_musicbrainz.py
 
 # S2 Bronze
-python scripts/bronze_ingest.py --dump <덤프 이름>
-python scripts/bronze_backfill.py            # 받아 둔 것 전부, 이미 한 것은 건너뜀
-python scripts/bronze_verify_raw.py
+python scripts/pipeline/bronze_ingest.py --dump <덤프 이름>
+python scripts/pipeline/bronze_backfill.py            # 받아 둔 것 전부, 이미 한 것은 건너뜀
+python scripts/checks/bronze_verify_raw.py
 
 # S3 Silver
-python scripts/silver_build.py
-python scripts/extract_mb_tables.py
-python scripts/silver_musicbrainz.py
+python scripts/pipeline/silver_build.py
+python scripts/pipeline/extract_mb_tables.py
+python scripts/pipeline/silver_musicbrainz.py
 
 # S4 Gold
-python scripts/gold_dim_artist.py --at <YYYY-MM-DD>
-python scripts/gold_fact_listens.py
-python scripts/gold_rename_drill.py          # 개명 주입 → 이력 확인 → 되돌림
-python scripts/gold_pit_join_drill.py        # 시점 조인이 당시 이름을 주는지
+python scripts/pipeline/gold_dim_artist.py --at <YYYY-MM-DD>
+python scripts/pipeline/gold_fact_listens.py
+python scripts/pipeline/gold_mart.py
+
+# 점검 (전부 임시 사본에서, 운영 표는 읽기만)
+python scripts/drills/gold_rename_drill.py          # 개명을 주입해 이력 두 줄이 생기는지
+python scripts/drills/gold_pit_join_drill.py        # 시점 조인이 당시 이름을 주는지
+python scripts/drills/gold_promote_drill.py         # 이름 자리 줄이 제자리에서 채워지는지
+python scripts/drills/silver_quarantine_drill.py    # 불량 4종이 격리되는지
 ```
 
 `--at`은 병합이 여는 새 줄의 `valid_from`이 된다. 처음 만들 때는 `--at`과 무관하게

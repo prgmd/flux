@@ -106,7 +106,7 @@ services:
     depends_on:
       spark-master:
         condition: service_healthy
-    command: ["python", "scripts/cluster_check.py"]
+    command: ["python", "scripts/checks/cluster_check.py"]
 
   postgres-serving:
     image: postgres:16

@@ -104,9 +104,9 @@ BTS 한 아티스트에 300만 행이 몰려 있고 파티션 수와 무관하�
 
 ```
 for N in 96 24 192 48; do
-  ./scripts/spark_run.sh -m 10g -- python scripts/experiment_skew.py \
+  ./scripts/spark_run.sh -m 10g -- python scripts/experiments/experiment_skew.py \
     --only aqe_off --repeats 1 --shuffle-partitions $N --out skew-partitions-$N
-  PYTHONPATH=src venv/Scripts/python scripts/rederive_skew.py \
+  PYTHONPATH=src venv/Scripts/python scripts/experiments/rederive_skew.py \
     --logs eventlogs/skew-partitions-$N --out skew-partitions-$N-rederived
 done
 ```

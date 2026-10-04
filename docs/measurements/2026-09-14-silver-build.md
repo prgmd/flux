@@ -111,7 +111,7 @@ MBID 우선 규칙이 실제로 일했다고 볼 수 있다.
 ```
 docker run --rm -m 14g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/silver_build.py
+  python scripts/pipeline/silver_build.py
 ```
 
 결과는 데이터 루트의 `measurements/silver-build.json`에 있다.

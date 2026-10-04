@@ -56,7 +56,7 @@ keyed.groupBy(*KEY).agg(...).filter(F.col("shapes") > 1).limit(400)
 ```
 docker run --rm -m 12g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/measure_user_identity.py
+  python scripts/investigations/measure_user_identity.py
 ```
 
 결과는 데이터 루트의 `measurements/user-identity.json`에 있다.

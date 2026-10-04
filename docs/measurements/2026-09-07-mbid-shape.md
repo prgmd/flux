@@ -116,7 +116,7 @@ Last.fm 임포터가 최대 유입 경로이기 때문이다(아래 클라이언
 ```
 docker run --rm -m 8g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/inspect_mbid.py
+  python scripts/investigations/inspect_mbid.py
 ```
 
 결과는 데이터 루트의 `measurements/mbid-shape.json`에 있다.

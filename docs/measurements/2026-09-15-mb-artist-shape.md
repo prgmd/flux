@@ -134,8 +134,8 @@ artist  +  artist_type  +  area  +  iso_3166_1  ( + gender )
 ## 재현
 
 ```
-FLUX_STORAGE_ROOT=<데이터 루트> python scripts/inspect_mb_artist.py --rows 30
-FLUX_STORAGE_ROOT=<데이터 루트> python scripts/inspect_mb_lookups.py
+FLUX_STORAGE_ROOT=<데이터 루트> python scripts/investigations/inspect_mb_artist.py --rows 30
+FLUX_STORAGE_ROOT=<데이터 루트> python scripts/investigations/inspect_mb_lookups.py
 ```
 
 결과는 데이터 루트의 `measurements/mb-artist-shape.json`과

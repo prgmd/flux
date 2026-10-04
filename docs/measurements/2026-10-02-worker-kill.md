@@ -75,7 +75,7 @@
 그 실행기가 끝낸 태스크 수, 실패한 태스크와 다시 돈 단계다. 셋이 다 있어야 통과다. 기준선에서는
 셋 다 0이었다.
 
-**죽이는 시점을 사람이 아니라 규칙이 정한다**(`scripts/kill_worker_mid_shuffle.py`,
+**죽이는 시점을 사람이 아니라 규칙이 정한다**(`scripts/experiments/kill_worker_mid_shuffle.py`,
 `flux.common.sparkui.ready_to_kill`). 드라이버 UI의 REST API로 단계 상태를 보다가 **100MB 이상의
 셔플을 남기고 끝난 단계가 있고 다음 단계가 도는** 순간에 죽인다. 하한을 둔 이유는 Delta가
 테이블을 읽기 전에 트랜잭션 로그로 파일 목록을 만드는 일도 셔플을 쓰기 때문이다(이 데이터에서
@@ -118,10 +118,10 @@ docker compose up -d spark-master spark-worker
 ./scripts/spark_run.sh -m 6g --name flux-worker-kill --network flux_default -p 4040:4040 \
   -v "$PWD/docker/spark-conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro" \
   -e FLUX_SPARK_MASTER=spark://spark-master:7077 \
-  -- python scripts/experiment_worker_kill.py --phase baseline
+  -- python scripts/experiments/experiment_worker_kill.py --phase baseline
 
 # 위와 같은 명령에 --phase killed 를 주고, 다른 창에서
-PYTHONPATH=src venv/Scripts/python scripts/kill_worker_mid_shuffle.py \
+PYTHONPATH=src venv/Scripts/python scripts/experiments/kill_worker_mid_shuffle.py \
   --container flux-spark-worker-2
 
 docker compose up -d spark-worker      # 죽인 워커를 되살린다

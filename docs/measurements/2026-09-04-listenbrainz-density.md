@@ -110,6 +110,6 @@
 
 ## 측정 방법
 
-`scripts/measure_density.py`. 압축을 디스크에 풀지 않고 `compression.zstd`(Python 3.14 표준)로 스트리밍하며 집계한다. 2.42GB를 메모리에 올리지 않는다.
+`scripts/investigations/measure_density.py`. 압축을 디스크에 풀지 않고 `compression.zstd`(Python 3.14 표준)로 스트리밍하며 집계한다. 2.42GB를 메모리에 올리지 않는다.
 
 원시 결과는 데이터 루트의 `measurements/density-2651.json`에 남는다. 저장소에는 이 요약만 둔다.

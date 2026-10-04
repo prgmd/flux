@@ -62,7 +62,7 @@
 ```
 docker run --rm -m 12g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/measure_duplicates.py
+  python scripts/investigations/measure_duplicates.py
 ```
 
 결과는 데이터 루트의 `measurements/duplicates.json`에 있다.

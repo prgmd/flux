@@ -143,7 +143,7 @@ AQE가 셔플 뒤에 파티션을 다시 짜면서 단계 구성이 달라진 �
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/experiment_skew.py
+  python scripts/experiments/experiment_skew.py
 ```
 
 12런에 26분. 결과는 데이터 루트의 `measurements/skew-experiment.json`에 있고,

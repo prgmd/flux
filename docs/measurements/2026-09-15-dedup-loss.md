@@ -89,7 +89,7 @@ Bronze의 `raw_json`과 대응되지 않는 Silver 행이 생긴다. 합치지 �
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/measure_dedup_loss.py
+  python scripts/investigations/measure_dedup_loss.py
 ```
 
 결과는 데이터 루트의 `measurements/dedup-loss.json`에 있다.

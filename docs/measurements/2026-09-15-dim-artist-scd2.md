@@ -194,9 +194,9 @@ Daiga Petkeviča      2026-09-15 ~ 2026-12-25  닫힘
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/gold_dim_artist.py --at 2026-09-15
+  python scripts/pipeline/gold_dim_artist.py --at 2026-09-15
 
-docker run ... flux-spark python scripts/gold_rename_drill.py
+docker run ... flux-spark python scripts/drills/gold_rename_drill.py
 ```
 
 강제 종료는 `--keep`을 붙여 돌린 뒤 호스트에서 차원 폴더의 parquet 개수를

@@ -102,7 +102,7 @@ Z-Order를 data skipping 기법으로만 알고 있었는데, 실제로는 **압
 ```
 docker run --rm -m 10g -v <데이터 루트>:/data \
   -e FLUX_STORAGE_ROOT=file:///data ... flux-spark \
-  python scripts/experiment_delta.py
+  python scripts/experiments/experiment_delta.py
 ```
 
 약 10분. 결과는 데이터 루트의 `measurements/delta-experiment.json`에 있다.

@@ -51,7 +51,7 @@
 
 ## 5. 측정 방법
 
-`scripts/inspect_musicbrainz.py`. `tarfile`의 스트리밍 모드(`r|bz2`)로 압축을 풀지 않고 읽으며, 테이블마다 개행 수를 세어 행 수를 구한다.
+`scripts/investigations/inspect_musicbrainz.py`. `tarfile`의 스트리밍 모드(`r|bz2`)로 압축을 풀지 않고 읽으며, 테이블마다 개행 수를 세어 행 수를 구한다.
 
 - 마지막 줄에 개행이 없는 경우를 따로 더한다
 - 요청한 테이블을 다 세면 즉시 멈춘다. 7GB를 끝까지 풀 이유가 없다

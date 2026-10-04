@@ -209,11 +209,11 @@ docker compose up -d spark-master spark-worker
 ./scripts/spark_run.sh -m 6g --network flux_default \
   -v "$PWD/docker/spark-conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro" \
   -e FLUX_SPARK_MASTER=spark://spark-master:7077 \
-  -- python scripts/experiment_skew.py --out skew-experiment-cluster
+  -- python scripts/experiments/experiment_skew.py --out skew-experiment-cluster
 
-PYTHONPATH=src venv/Scripts/python scripts/rederive_skew.py \
+PYTHONPATH=src venv/Scripts/python scripts/experiments/rederive_skew.py \
     --logs eventlogs-cluster --out skew-rederived-cluster
-PYTHONPATH=src venv/Scripts/python scripts/rederive_skew.py \
+PYTHONPATH=src venv/Scripts/python scripts/experiments/rederive_skew.py \
     --logs eventlogs-local --out skew-rederived-local
 ```
 

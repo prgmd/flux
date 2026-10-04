@@ -96,7 +96,7 @@ MBID는 dimension 연결의 유일한 수단이고 이미 64%가 없다
 > **`MAPPING`은 한 건도 지워지지 않았다.** 정렬의 첫 키가 출처 순위라
 > **남은 행이 언제나 그 그룹에서 가장 좋은 출처를 갖는다.** 그래서 합쳐도
 > 더 나은 MBID를 얻을 수 없다. 실측은 `measurements/2026-09-15-dedup-loss.md`,
-> 재는 스크립트는 `scripts/measure_dedup_loss.py`.
+> 재는 스크립트는 `scripts/investigations/measure_dedup_loss.py`.
 
 ## 어디서 거르는가
 

@@ -22,7 +22,7 @@ def master() -> str:
     """어디에 붙을 것인가. 기본은 로컬 모드다.
 
     잡 전부가 로컬 모드로 돌아 왔다. compose의 standalone 클러스터에 붙는 것은
-    scripts/cluster_check.py 하나뿐이었고, 그래서 **클러스터로 한 일이 없다.**
+    scripts/checks/cluster_check.py 하나뿐이었고, 그래서 **클러스터로 한 일이 없다.**
 
     S4의 스큐 실험에 직접 걸린다. 로컬 모드에서도 파티션 스큐는 보이지만
     셔플이 네트워크를 타지 않으므로 salting의 효과가 과소 측정된다.

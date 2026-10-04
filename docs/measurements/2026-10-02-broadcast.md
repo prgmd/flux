@@ -15,7 +15,7 @@
 
 입력은 이미 만든 마트에서 이름 컬럼을 뗀 것이다. `gold_mart.py --no-broadcast`로 재면 집계와 마트
 쓰기가 같이 돌아 시간에 섞이고 운영 마트를 덮어쓰므로, 이름 조인만 따로 도는 스크립트를 두었다
-(`scripts/experiment_broadcast.py`).
+(`scripts/experiments/experiment_broadcast.py`).
 
 | | |
 | --- | --- |
@@ -130,9 +130,9 @@ PySpark는 세션을 닫고 새로 만들어도 같은 JVM을 계속 쓰므로 J
 ## 재현
 
 ```
-./scripts/spark_run.sh -m 10g -- python scripts/experiment_broadcast.py --repeats 1 --out broadcast-precheck
-./scripts/spark_run.sh -m 10g -- python scripts/experiment_broadcast.py --out broadcast-experiment
-./scripts/spark_run.sh -- python scripts/experiment_broadcast.py --rederive --out broadcast-experiment
+./scripts/spark_run.sh -m 10g -- python scripts/experiments/experiment_broadcast.py --repeats 1 --out broadcast-precheck
+./scripts/spark_run.sh -m 10g -- python scripts/experiments/experiment_broadcast.py --out broadcast-experiment
+./scripts/spark_run.sh -- python scripts/experiments/experiment_broadcast.py --rederive --out broadcast-experiment
 ```
 
 아홉 런에 약 5분. 결과는 데이터 루트의 `measurements/broadcast-experiment.json`, 런마다의 최종 계획은
