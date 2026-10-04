@@ -8,13 +8,18 @@
 한쪽만 보면 부족하다. 조인이 통째로 망가져 늘 옛 이름만 주어도 "과거 청취가
 옛 이름으로 나온다"는 통과하기 때문이다. **양쪽이 서로 달라야** 검증이 된다.
 
-차원을 건드리므로 확인이 끝나면 시점 조회로 되돌린다.
+**운영 차원은 건드리지 않는다.** 차원을 임시 사본으로 복사해 거기에 개명을 주입하고,
+끝나면 사본을 지운다. 처음에는 운영 차원에 MERGE를 쓴 뒤 시점 조회로 옛 값을 읽고
+되돌렸다. Delta는 지운 파일 보존 기간(7일)보다 오래된 버전으로의 시점 조회를 막으므로,
+차원이 한동안 안 바뀌었으면 **MERGE만 하고 죽어 운영 차원이 반쯤 바뀐 채 남는다.**
+사본의 버전은 방금 만들어진 것이라 그 안의 시점 조회는 막히지 않는다.
 
     docker run ... -e FLUX_STORAGE_ROOT=file:///data flux-spark \
         python scripts/gold_pit_join_drill.py
 """
 
 import argparse
+import shutil
 import sys
 
 from delta.tables import DeltaTable
@@ -30,16 +35,22 @@ NEW_NAME = "개명 확인용 이름"
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true",
-                        help="확인 후 되돌리지 않는다")
+                        help="끝나도 사본을 지우지 않는다")
     parser.add_argument("--no-broadcast", action="store_true",
                         help="차원 조인에 브로드캐스트를 강제하지 않는다. AQE가 고르게 두고 재려고 쓴다")
     args = parser.parse_args()
 
-    dim_path = config.gold(scd2.TABLE_NAME)
+    prod_path = config.gold(scd2.TABLE_NAME)
+    dim_path = config.scratch("pit-drill", scd2.TABLE_NAME)
+    work_dir = config.local_root() / config.SCRATCH / "pit-drill"
     fact_path = config.gold(fact.TABLE_NAME)
 
     spark = spark_session("flux-pit-drill", shuffle_partitions=64)
     try:
+        production = spark.read.format("delta").load(prod_path)
+        prod_rows = production.count()
+        production.write.format("delta").mode("overwrite").save(dim_path)
+        print(f"사본               : {dim_path}")
         table = DeltaTable.forPath(spark, dim_path)
         before_version = table.history(1).select("version").first()["version"]
         print(f"주입 전 Delta 버전 : {before_version}")
@@ -151,6 +162,12 @@ def main() -> int:
             "짝 없는 청취가 없다": unmatched == 0,
             "청취가 늘거나 줄지 않았다": total == target["n"],
         }
+        untouched = spark.read.format("delta").load(prod_path)
+        checks["운영 차원은 그대로다"] = (
+            untouched.count() == prod_rows
+            and untouched.filter((F.col(scd2.BUSINESS_KEY) == mbid)
+                                 & F.col(scd2.IS_CURRENT))
+            .first()["name"] == old_name)
         print()
         print("확인")
         for label, ok in checks.items():
@@ -167,17 +184,8 @@ def main() -> int:
             "names_before": sorted(str(n) for n in eras.get("개명 전", [])),
             "names_after": sorted(str(n) for n in eras.get("개명 후", [])),
             "checks": {k: bool(v) for k, v in checks.items()},
-            "restored_to_version": None if args.keep else before_version,
+            "worked_on_copy": True,
         })
-
-        if not args.keep:
-            print()
-            print(f"버전 {before_version}으로 되돌린다")
-            (
-                spark.read.format("delta")
-                .option("versionAsOf", before_version).load(dim_path)
-                .write.format("delta").mode("overwrite").save(dim_path)
-            )
 
         failed = [k for k, v in checks.items() if not v]
         if failed:
@@ -189,6 +197,8 @@ def main() -> int:
         return 0
     finally:
         spark.stop()
+        if not args.keep and work_dir.exists():
+            shutil.rmtree(work_dir)
 
 
 if __name__ == "__main__":
