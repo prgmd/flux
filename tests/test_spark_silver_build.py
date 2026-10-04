@@ -20,6 +20,8 @@ import pytest
 pytest.importorskip("pyspark", reason="Spark 없이 도는 환경이다")
 pytest.importorskip("delta", reason="delta-spark가 없다")
 
+from pyspark.sql import functions as F
+
 from flux.silver import build, dedup, quality, schema
 from flux.silver.mbid import MbidSource
 
@@ -283,3 +285,34 @@ def test_작업_컬럼이_결과에_남지_않는다(spark):
         spark.createDataFrame(rows, NORMALIZED_SCHEMA)).columns
     for working in schema.WORKING_COLUMNS + ("_rn",):
         assert working not in columns
+
+
+# ── 시간대 ──────────────────────────────────────────────────
+
+def _month_edge(spark):
+    """2026-09-30 23:30:00 UTC. 한국 시간으로는 10월 1일 08:30이다."""
+    edge = int(datetime(2026, 10, 1, tzinfo=timezone.utc).timestamp()) - 1800
+    return (spark.createDataFrame([(edge,)], "s long")
+            .select(F.timestamp_seconds("s").alias("t")))
+
+
+def test_세션_시간대는_UTC다(spark):
+    """지정하지 않으면 JVM 기본값을 따른다. 컨테이너에서는 `Etc/UTC`로 나와서
+    우연히 맞았을 뿐이다."""
+    assert spark.conf.get("spark.sql.session.timeZone") == "UTC"
+
+
+def test_달_경계의_청취는_UTC_달로_들어간다(spark):
+    frame = _month_edge(spark)
+    assert frame.select(build.listened_month(F.col("t"))).first()[0] == "2026-09"
+
+
+def test_시간대가_다르면_같은_청취가_다른_달이_된다(spark):
+    """세션을 못 박아야 하는 이유. 같은 순간이 서울 시간으로는 10월이다."""
+    frame = _month_edge(spark)
+    before = spark.conf.get("spark.sql.session.timeZone")
+    spark.conf.set("spark.sql.session.timeZone", "Asia/Seoul")
+    try:
+        assert frame.select(build.listened_month(F.col("t"))).first()[0] == "2026-10"
+    finally:
+        spark.conf.set("spark.sql.session.timeZone", before)

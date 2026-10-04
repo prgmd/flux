@@ -19,3 +19,17 @@ def test_드라이버_주소가_IP다():
 def test_바인드는_모든_인터페이스다():
     """컨테이너 네트워크에서는 어느 인터페이스로 들어오든 받아야 한다."""
     assert spark._driver_address()["spark.driver.bindAddress"] == "0.0.0.0"
+
+
+def test_세션_시간대는_UTC다():
+    """달과 날짜 글자가 시간대를 따른다. 기계마다 다르면 파티션 값이 갈린다."""
+    assert spark.TIME_ZONE == "UTC"
+
+
+def test_세션이_시간대를_실제로_설정에_넣는다():
+    """상수만 있고 빌더에 안 들어가면 아무 일도 안 한다. 세션은 pyspark가 있어야
+    만들 수 있으므로 원문으로 확인한다."""
+    import inspect
+
+    body = inspect.getsource(spark.session)
+    assert '"spark.sql.session.timeZone", TIME_ZONE' in body

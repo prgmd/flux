@@ -57,6 +57,9 @@ def _driver_address() -> dict:
     }
 
 
+TIME_ZONE = "UTC"
+
+
 def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
             master_url: str | None = None, extra: dict | None = None):
     """Delta 확장이 붙은 세션.
@@ -69,6 +72,13 @@ def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
     `extra`는 S4의 스큐 실험이 쓴다. AQE를 켜고 끄거나 이벤트 로그를 남기는
     설정을 밖에서 주입한다. **기본값은 비어 있다.** 실험용 설정이 평소 잡에
     스며들면 지금까지의 측정과 비교할 수 없게 된다.
+
+    **시간대를 UTC로 못 박는다**(`TIME_ZONE`). 청취 시각은 시간대가 없는 순간이지만,
+    그것을 "2026-09" 같은 달이나 "2026-09-30" 같은 날짜 글자로 바꾸는 순간 시간대가
+    끼어든다. UTC로 9월 30일 밤 11시는 한국 시간으로 10월 1일 아침 8시다. 그 글자가
+    Silver와 팩트의 파티션 값이고 마트의 날짜다. 지정하지 않으면 Spark는 JVM의 기본
+    시간대를 쓰는데, 지금은 컨테이너가 UTC라 우연히 맞을 뿐이다. 다른 시간대의 기계에서
+    같은 코드를 돌리면 경계 근처의 청취가 **조용히 다른 달로** 간다.
     """
     from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
@@ -82,6 +92,7 @@ def session(app_name: str, *, shuffle_partitions: int = 200, memory: str = "8g",
         .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
         .config("spark.ui.enabled", "false")
         .config("spark.driver.memory", memory)
+        .config("spark.sql.session.timeZone", TIME_ZONE)
     )
     # 클러스터일 때만 드라이버 주소를 잡는다. 로컬 모드에 넣으면 불필요하고,
     # 기존 측정과 설정이 달라져 재현이 어긋난다.

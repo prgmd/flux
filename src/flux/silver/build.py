@@ -187,13 +187,21 @@ def deduplicate(normalized: DataFrame) -> DataFrame:
     )
 
 
+def listened_month(column):
+    """청취 시각을 파티션 값("2026-09")으로 바꾼다. **세션 시간대를 따른다.**
+
+    그래서 세션을 UTC로 못 박는다(flux.common.spark.TIME_ZONE). 같은 순간이라도
+    시간대에 따라 다른 달 글자가 나온다.
+    """
+    return F.date_format(column, "yyyy-MM")
+
+
 def finalize(deduplicated: DataFrame) -> DataFrame:
     """스키마 컬럼만 남기고 순서를 맞춘다."""
     return (
         deduplicated
         .withColumn("listened_at", F.col("_listened_ts"))
-        .withColumn(schema.PARTITION_COLUMN,
-                    F.date_format(F.col("_listened_ts"), "yyyy-MM"))
+        .withColumn(schema.PARTITION_COLUMN, listened_month(F.col("_listened_ts")))
         .select(*schema.column_names())
     )
 
