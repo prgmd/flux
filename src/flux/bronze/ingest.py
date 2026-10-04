@@ -29,6 +29,15 @@ def build_dataframe(
     """텍스트 파일을 읽어 판정 컬럼이 붙은 데이터프레임을 만든다.
 
     유효한 행과 격리 대상이 아직 섞여 있다. 나누는 것은 split()이 한다.
+
+    `_record_id`는 **저장되는 글자의 해시**(xxhash64)다. 성한 줄은 공백을 뗀 줄
+    (`raw_json`으로 저장된다), 격리 줄은 원본 줄(`raw_line`) 그대로다. 같은 덤프를
+    다시 적재해도 같은 청취가 같은 번호를 받고, 성한 줄의 번호는 이미 쌓인 Bronze의
+    `raw_json`에서 다시 계산할 수 있다. 64비트 해시라 1억 5,571만 행 전체에서 서로
+    다른 두 줄이 겹칠 확률은 생일 문제로 대략 n²/2^65, 0.07%이고, 청취 키가
+    (덤프, 번호) 쌍이라 실제로 문제가 되는 것은 한 덤프 안의 충돌이다. 덤프 하나가
+    많아야 900만 행이므로 2백만분의 1 수준이다. 겹치면 팩트의 `duplicate_grain_keys`
+    불변식이 잡는다.
     """
     ingested_at = ingested_at or datetime.now(timezone.utc)
 
@@ -55,7 +64,9 @@ def build_dataframe(
         .withColumn("_ingested_at", F.lit(ingested_at).cast("timestamp"))
         .withColumn("_source_dump", F.lit(source_dump))
         .withColumn("_source_file", F.lit(source_file))
-        .withColumn("_record_id", F.monotonically_increasing_id())
+        .withColumn("_record_id", F.xxhash64(
+            F.when(F.col("_reject_reason").isNull(), F.col("_trimmed"))
+             .otherwise(F.col("_raw"))))
         .withColumn(schema.PARTITION_COLUMN, F.lit(ingested_at.date()).cast("date"))
     )
 

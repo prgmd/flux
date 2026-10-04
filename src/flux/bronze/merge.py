@@ -6,13 +6,7 @@ pyspark를 꼭대기에서 import하지 않는다. 스키마 선언과 같은 �
 """
 
 
-def _default_record_id():
-    from pyspark.sql import functions as F
-
-    return F.monotonically_increasing_id()
-
-
-def combine(frames, *, record_id=None):
+def combine(frames):
     """여러 파일의 데이터프레임을 덤프 하나 분량으로 합친다.
 
     덤프 하나에 파일이 여럿일 수 있다. 달이 바뀌는 날의 증분 덤프에는
@@ -22,8 +16,11 @@ def combine(frames, *, record_id=None):
     두 번째 파일을 쓰는 순간 첫 번째 파일의 행이 통째로 지워진다.
     쓰기는 덤프당 한 번이어야 한다.
 
-    `_record_id`도 여기서 다시 매긴다. 파일마다 따로 매긴 번호는
-    합치면 겹칠 수 있고, 그러면 "적재 안에서 유일"이라는 약속이 깨진다.
+    `_record_id`는 다시 매기지 않는다. 파일을 읽을 때 줄 내용의 해시로 이미 붙어
+    있고(flux.bronze.ingest.build_dataframe), 내용이 번호를 정하므로 합쳐도 다른 줄끼리
+    겹치지 않는다. 예전에는 `monotonically_increasing_id()`로 매겨서 파일마다 따로 매긴
+    번호가 겹칠 수 있었고, 그래서 여기서 다시 매겼다. 그 번호는 다시 적재할 때마다
+    달라져 백필이 성립하지 않았다.
     """
     frames = list(frames)
     if not frames:
@@ -32,7 +29,4 @@ def combine(frames, *, record_id=None):
     combined = frames[0]
     for frame in frames[1:]:
         combined = combined.unionByName(frame)
-
-    if record_id is None:
-        record_id = _default_record_id()
-    return combined.withColumn("_record_id", record_id)
+    return combined

@@ -35,30 +35,33 @@ class FakeFrame:
 
 def test_파일이_하나면_그대로_둔다():
     frame = FakeFrame("8월")
-    assert merge.combine([frame], record_id="가짜").merged == []
+    assert merge.combine([frame]).merged == []
 
 
 def test_파일이_여럿이면_모두_합친다():
     """하나라도 빠지면 그 파일의 행이 통째로 사라진다."""
     frames = [FakeFrame("8월"), FakeFrame("9월")]
-    assert merge.combine(frames, record_id="가짜").merged == ["9월"]
+    assert merge.combine(frames).merged == ["9월"]
 
 
 def test_세_개도_순서대로_합친다():
     frames = [FakeFrame(n) for n in ("a", "b", "c")]
-    assert merge.combine(frames, record_id="가짜").merged == ["b", "c"]
+    assert merge.combine(frames).merged == ["b", "c"]
 
 
-def test_합친_뒤_행_식별자를_다시_매긴다():
+def test_합쳐도_행_식별자를_다시_매기지_않는다():
     """파일마다 따로 매긴 번호는 합치면 겹칠 수 있다."""
-    result = merge.combine([FakeFrame("8월"), FakeFrame("9월")], record_id="가짜")
-    assert "_record_id" in result.recolumned
+    """번호는 파일마다 줄 내용의 해시로 이미 붙어 있다. 내용이 정하므로 합쳐도
+    겹치지 않고(같은 내용이면 같은 청취다), 다시 매기면 오히려 다시 적재할 때
+    같은 번호가 나온다는 성질이 깨진다."""
+    result = merge.combine([FakeFrame("8월"), FakeFrame("9월")])
+    assert "_record_id" not in result.recolumned
 
 
-def test_파일이_하나여도_식별자를_다시_매긴다():
+def test_파일이_하나여도_식별자를_건드리지_않는다():
     """경로가 갈리면 한쪽만 검증되고 다른 쪽이 조용히 달라진다."""
-    result = merge.combine([FakeFrame("8월")], record_id="가짜")
-    assert "_record_id" in result.recolumned
+    result = merge.combine([FakeFrame("8월")])
+    assert result.recolumned == []
 
 
 def test_빈_목록은_거부한다():
@@ -69,4 +72,4 @@ def test_빈_목록은_거부한다():
 
 def test_제너레이터도_받는다():
     frames = (FakeFrame(n) for n in ("a", "b"))
-    assert merge.combine(frames, record_id="가짜").merged == ["b"]
+    assert merge.combine(frames).merged == ["b"]

@@ -13,6 +13,8 @@ import pytest
 pytest.importorskip("pyspark", reason="Spark 없이 도는 환경이다")
 pytest.importorskip("delta", reason="delta-spark가 없다")
 
+from pyspark.sql import functions as F
+
 from flux.bronze import ingest, record, schema
 
 pytestmark = pytest.mark.spark
@@ -109,9 +111,64 @@ def test_두_스키마의_컬럼과_순서가_선언과_같다(ingested):
 
 
 def test_record_id가_덤프_안에서_유일하다(ingested):
-    """monotonically_increasing_id()가 주는 것은 잡 하나 안에서의 유일함이다.
-    덤프를 건너면 겹친다 — 그래서 청취 키가 (_source_dump, _record_id) 쌍이다."""
+    """번호는 저장되는 글자의 해시다. 견본의 여섯 줄은 글자가 모두 다르므로 번호도
+    모두 다르다. 빈 줄 둘("", "   ")은 공백을 떼면 같지만, 격리 줄은 원본 줄을
+    그대로 들고 가므로 그 원본으로 해시해 갈린다."""
     valid, rejected = ingested
     ids = [row["_record_id"] for row in valid.select("_record_id").collect()]
     ids += [row["_record_id"] for row in rejected.select("_record_id").collect()]
     assert len(ids) == len(set(ids))
+
+
+def test_같은_파일을_다시_적재해도_번호가_같다(spark, tmp_path):
+    """백필이 성립하려면 같은 덤프를 다시 실었을 때 같은 청취가 같은 번호를 받아야
+    한다. 예전 번호(`monotonically_increasing_id`)는 실행마다, 파티션 배치마다
+    달라져서 팩트의 청취 식별자가 통째로 바뀌었다."""
+    source = tmp_path / FILE
+    source.write_text("\n".join(LINES), encoding="utf-8")
+    from datetime import datetime, timezone
+
+    def ids(at):
+        valid, rejected = ingest.split(ingest.build_dataframe(
+            spark, source.as_posix(), source_dump=DUMP, source_file=FILE,
+            ingested_at=at))
+        return sorted(r["_record_id"] for r in
+                      valid.select("_record_id").union(
+                          rejected.select("_record_id")).collect())
+
+    first = ids(datetime(2026, 9, 4, tzinfo=timezone.utc))
+    again = ids(datetime(2026, 10, 4, tzinfo=timezone.utc))
+    assert first == again
+
+
+def test_성한_줄의_번호는_raw_json의_해시다(ingested):
+    """이 성질 덕분에 이미 쌓인 Bronze에서 원본을 다시 읽지 않고 번호를 다시 계산할
+    수 있다(`xxhash64(raw_json)`)."""
+    valid, _ = ingested
+    rows = valid.select("_record_id", F.xxhash64("raw_json").alias("h")).collect()
+    assert rows and all(r["_record_id"] == r["h"] for r in rows)
+
+
+def test_같은_줄이_다른_파일_배치로_와도_번호가_같다(spark, tmp_path):
+    """예전 번호는 (파티션 번호, 그 안의 위치)로 정해졌다. 같은 줄이라도 파일이 몇 개로
+    나뉘어 왔는지, 합치는 순서가 어땠는지에 따라 번호가 달라졌다. 해시는 줄 내용만 본다."""
+    from flux.bronze import merge
+
+    whole = tmp_path / "whole.listens"
+    whole.write_text("\n".join(LINES), encoding="utf-8")
+    first, second = tmp_path / "a.listens", tmp_path / "b.listens"
+    first.write_text("\n".join(LINES[:3]), encoding="utf-8")
+    second.write_text("\n".join(LINES[3:]), encoding="utf-8")
+
+    def ids(frame):
+        valid, rejected = ingest.split(frame)
+        return sorted(r["_record_id"] for r in valid.select("_record_id").union(
+            rejected.select("_record_id")).collect())
+
+    one = ids(ingest.build_dataframe(spark, whole.as_posix(),
+                                     source_dump=DUMP, source_file="whole"))
+    two = ids(merge.combine([
+        ingest.build_dataframe(spark, path.as_posix(), source_dump=DUMP,
+                               source_file=path.name)
+        for path in (second, first)]))
+    assert one == two
