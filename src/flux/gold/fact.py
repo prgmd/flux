@@ -14,14 +14,18 @@
 
 청취를 가리키는 것은 **두 컬럼의 쌍**이다. `_record_id` 하나로는 안 된다.
 
-`_record_id`는 `monotonically_increasing_id()`로 매기는데, 그 함수가 주는 것은
+`_record_id`는 처음에 `monotonically_increasing_id()`였고, 그 함수가 주는 것은
 **Spark 잡 하나 안에서의 유일함**이다. Bronze는 덤프마다 별개 잡으로 실었으므로
-번호가 덤프를 건너 겹친다. 실측에서 151,192,624행에 서로 다른 `_record_id`가
+번호가 덤프를 건너 겹쳤다. 실측에서 151,192,624행에 서로 다른 `_record_id`가
 **9,487,346개**뿐이었다(1억 4,170만 건 겹침).
 
 처음에 `_record_id` 하나를 `listen_id`로 썼다가 부풀림이 16배로 나왔다.
 `flux/bronze/merge.py`가 "**적재 안에서** 유일"이라고 이미 적어 둔 것을
 전역 유일로 잘못 읽은 탓이다.
+
+2026-10-04부터 `_record_id`는 줄 내용의 해시다(flux.bronze.ingest.build_dataframe).
+덤프를 건너 겹칠 일이 거의 없어졌지만 쌍을 그대로 쓴다. 해시는 드물게나마 겹칠 수
+있고, 덤프를 함께 쓰면 겹침을 따질 범위가 덤프 하나로 줄어든다.
 
 pyspark를 부르지 않는다. 실제 적재는 flux.gold.fact_listens가 한다.
 """
@@ -49,7 +53,7 @@ COLUMNS: tuple[Column, ...] = (
     Column("_source_dump", "string", False,
            "이 청취가 온 덤프. _record_id와 함께 청취 하나를 가리킨다"),
     Column("_record_id", "long", False,
-           "덤프 안에서의 행 번호. **덤프를 건너면 겹친다**"),
+           "줄 내용의 해시. _source_dump와 쌍으로 청취를 가리킨다"),
     Column("listened_at", "timestamp", False, "청취 시각"),
     Column(PARTITION_COLUMN, "string", False, "청취 시각의 연월. 파티션 컬럼"),
     Column("user_id", "string", False, "사용자 번호. dim_user FK"),
