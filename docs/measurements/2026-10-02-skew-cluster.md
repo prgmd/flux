@@ -212,12 +212,12 @@ docker compose up -d spark-master spark-worker
   -- python scripts/experiments/experiment_skew.py --out skew-experiment-cluster
 
 PYTHONPATH=src venv/Scripts/python scripts/experiments/rederive_skew.py \
-    --logs eventlogs-cluster --out skew-rederived-cluster
+    --logs eventlogs/skew-experiment-cluster --out skew-rederived-cluster
 PYTHONPATH=src venv/Scripts/python scripts/experiments/rederive_skew.py \
-    --logs eventlogs-local --out skew-rederived-local
+    --logs eventlogs/skew-experiment-local --out skew-rederived-local
 ```
 
 12런에 약 52분. 이 측정은 로그 자리를 실험 이름으로 나누기 전에 돌아 `eventlogs/`에
-남았고, 끝난 뒤 `eventlogs-cluster/`로 옮겼다. 결과는 데이터 루트의
+남았고, 끝난 뒤 `eventlogs/skew-experiment-cluster/`로 옮겼다. 결과는 데이터 루트의
 `measurements/skew-experiment-cluster.json`과 `skew-rederived-{local,cluster}.json`,
 런마다의 최종 물리 계획은 `measurements/plans/skew-rederived-{local,cluster}/<구성>-<회차>.txt`.

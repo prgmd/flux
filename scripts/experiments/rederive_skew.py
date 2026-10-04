@@ -25,7 +25,7 @@
 읽는 단계**를 본다(flux.common.eventlog.join_stage).
 
     PYTHONPATH=src venv/Scripts/python scripts/experiments/rederive_skew.py \
-        --logs eventlogs-local --out skew-rederived-local
+        --logs eventlogs/skew-experiment-local --out skew-rederived-local
 """
 
 import argparse
