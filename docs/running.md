@@ -134,13 +134,15 @@ python scripts/pipeline/bronze_backfill.py            # 받아 둔 것 전부, �
 python scripts/checks/bronze_verify_raw.py
 
 # S3 Silver
-python scripts/pipeline/silver_build.py
+python scripts/pipeline/silver_build.py             # 전체를 다시 만든다
+python scripts/pipeline/silver_increment.py --dump <덤프 이름>   # 덤프 하나만 붙인다
 python scripts/pipeline/extract_mb_tables.py
 python scripts/pipeline/silver_musicbrainz.py
 
 # S4 Gold
 python scripts/pipeline/gold_dim_artist.py --at <YYYY-MM-DD>
-python scripts/pipeline/gold_fact_listens.py
+python scripts/pipeline/gold_fact_listens.py       # 전체를 다시 만든다
+python scripts/pipeline/gold_fact_increment.py     # Silver가 바뀐 만큼만 따라간다
 python scripts/pipeline/gold_mart.py
 
 # 점검 (전부 임시 사본에서, 운영 표는 읽기만)
@@ -148,6 +150,7 @@ python scripts/drills/gold_rename_drill.py          # 개명을 주입해 이력
 python scripts/drills/gold_pit_join_drill.py        # 시점 조인이 당시 이름을 주는지
 python scripts/drills/gold_promote_drill.py         # 이름 자리 줄이 제자리에서 채워지는지
 python scripts/drills/silver_quarantine_drill.py    # 불량 4종이 격리되는지
+python scripts/drills/increment_drill.py            # 덤프를 하나씩 붙인 Silver와 팩트가 전체 재생성과 같은지
 ```
 
 `--at`은 병합이 여는 새 줄의 `valid_from`이 된다. 처음 만들 때는 `--at`과 무관하게

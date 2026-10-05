@@ -1,19 +1,22 @@
-"""증분으로 붙인 Silver가 전체에서 다시 만든 Silver와 같은지 실데이터로 본다.
+"""덤프를 하나씩 붙인 Silver와 그것을 따라간 팩트가 전체에서 다시 만든 것과 같은지
+실데이터로 본다.
 
 운영 표는 읽기만 한다. 임시 자리(scratch)에서 한다.
 
-    1. 마지막 N개 덤프를 뺀 Bronze로 Silver를 만든다
-    2. 그 N개를 덤프 순서대로 하나씩 증분으로 붙인다. 덤프마다 시간과 병합 지표를 남긴다
-    3. 결과를 운영 Silver와 대조한다
+    1. 마지막 N개 덤프를 뺀 Bronze로 Silver를 만들고 변경 기록을 켠다
+    2. 그 Silver에서 팩트를 만든다. 차원은 운영 것을 복사해 쓴다
+    3. N개 덤프를 순서대로 하나씩 Silver에 붙이고, 그때마다 팩트가 따라가게 한다
+    4. Silver와 팩트를 운영 표와 대조한다
 
 대조는 실행 시각(`_built_at`) 말고 모든 컬럼이다. **번호도 넣는다.** 번호가 줄 내용의
 해시라 어느 길로 만들어도 같아야 한다. 예전 번호(monotonically_increasing_id)였다면
 이 대조 자체를 할 수 없었다.
 
-운영 Silver는 31덤프 전체에서 한 번에 만든 것이다. 같으면 "덤프를 하나씩 붙이는 것"과
-"전부 모아 한 번에 고르는 것"이 실데이터에서도 같다는 뜻이다(flux.silver.dedup.pick_arrival).
+운영 표는 31덤프 전체에서 한 번에 만든 것이다. 같으면 "덤프를 하나씩 붙이는 것"과
+"전부 모아 한 번에 고르는 것"이 실데이터에서도 같다는 뜻이다
+(flux.silver.dedup.pick_arrival).
 
-    ./scripts/spark_run.sh -m 12g -- python scripts/drills/silver_increment_drill.py [--last 7]
+    ./scripts/spark_run.sh -m 12g -- python scripts/drills/increment_drill.py [--last 7]
 """
 
 import argparse
@@ -27,10 +30,11 @@ from pyspark.sql import functions as F
 from flux.bronze import schema as bronze_schema
 from flux.common import config
 from flux.common.spark import session as spark_session
+from flux.gold import fact, fact_listens, scd2
 from flux.gold.mart_build import fingerprint
 from flux.silver import build, schema
 
-DRILL = "silver-increment"
+DRILL = "increment"
 
 
 def summarize(spark, path):
@@ -45,6 +49,10 @@ def file_count(spark, path) -> int:
     return DeltaTable.forPath(spark, path).detail().first()["numFiles"]
 
 
+def now():
+    return datetime.now(timezone.utc)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--last", type=int, default=7)
@@ -53,63 +61,99 @@ def main() -> int:
     args = parser.parse_args()
 
     bronze_path = config.bronze(bronze_schema.TABLE_NAME)
-    production = config.silver(schema.TABLE_NAME)
+    production = {
+        "silver": config.silver(schema.TABLE_NAME),
+        "fact": config.gold(fact.TABLE_NAME),
+    }
     work_dir = config.local_root() / config.SCRATCH / DRILL
-    work_silver = config.scratch(DRILL, schema.TABLE_NAME)
-    work_quarantine = config.scratch(DRILL, schema.QUARANTINE_TABLE_NAME)
+    work = {
+        "silver": config.scratch(DRILL, schema.TABLE_NAME),
+        "quarantine": config.scratch(DRILL, schema.QUARANTINE_TABLE_NAME),
+        "fact": config.scratch(DRILL, fact.TABLE_NAME),
+        "dim": config.scratch(DRILL, scd2.TABLE_NAME),
+    }
 
-    spark = spark_session("flux-silver-increment-drill", shuffle_partitions=200, memory="8g")
+    spark = spark_session("flux-increment-drill", shuffle_partitions=200, memory="8g")
     try:
         dumps = sorted(r[0] for r in spark.read.format("delta").load(bronze_path)
                        .select("_source_dump").distinct().collect())
         held = dumps[-args.last:]
-        print(f"덤프 {len(dumps)}개 중 뒤 {len(held)}개를 증분으로 붙인다")
+        print(f"덤프 {len(dumps)}개 중 뒤 {len(held)}개를 증분으로 붙인다", flush=True)
+
+        (spark.read.format("delta").load(config.gold(scd2.TABLE_NAME))
+         .write.format("delta").mode("overwrite").save(work["dim"]))
 
         started = time.time()
-        base, rejected = build.build(spark, bronze_path, built_at=datetime.now(timezone.utc),
-                                     without=held)
-        build.write(base, work_silver, partition=schema.PARTITION_COLUMN)
-        build.write(rejected, work_quarantine, partition=schema.QUARANTINE_PARTITION_COLUMN)
-        base_seconds = time.time() - started
-        base_files = file_count(spark, work_silver)
-        print(f"바탕 Silver {base_seconds:.0f}초, 파일 {base_files:,}개", flush=True)
+        base, rejected = build.build(spark, bronze_path, built_at=now(), without=held)
+        build.write(base, work["silver"], partition=schema.PARTITION_COLUMN)
+        build.write(rejected, work["quarantine"], partition=schema.QUARANTINE_PARTITION_COLUMN)
+        build.enable_change_feed(spark, work["silver"])
+        silver_seconds = time.time() - started
+
+        started = time.time()
+        version = fact_listens.table_version(spark, work["silver"])
+        rows = spark.read.format("delta").option("versionAsOf", version).load(work["silver"])
+        fact_listens.write(fact_listens.prepare(rows, built_at=now()), work["fact"],
+                           silver_version=version)
+        fact_seconds = time.time() - started
+        base_files = {name: file_count(spark, work[name]) for name in ("silver", "fact")}
+        print(f"바탕 Silver {silver_seconds:.0f}초, 팩트 {fact_seconds:.0f}초, 파일 "
+              f"Silver {base_files['silver']:,} 팩트 {base_files['fact']:,}", flush=True)
 
         steps = []
         for dump in held:
             started = time.time()
-            changes, rejected = build.increment(spark, bronze_path, work_silver, dump=dump,
-                                                built_at=datetime.now(timezone.utc))
-            metrics = build.merge(spark, changes, work_silver)
-            build.replace_quarantine(rejected, work_quarantine, dump=dump)
-            seconds = time.time() - started
-            print(f"{dump[17:31]} {seconds:5.0f}초  넣음 {metrics['numTargetRowsInserted']:>9,}  "
-                  f"고침 {metrics['numTargetRowsUpdated']:>7,}  "
-                  f"파일 지움 {metrics['numTargetFilesRemoved']:>5,} 새로 씀 "
-                  f"{metrics['numTargetFilesAdded']:>4,}", flush=True)
-            steps.append({"dump": dump, "seconds": round(seconds, 1), "merge": metrics})
+            changes, rejected = build.increment(spark, bronze_path, work["silver"],
+                                                dump=dump, built_at=now())
+            silver_merge = build.merge(spark, changes, work["silver"])
+            build.replace_quarantine(rejected, work["quarantine"], dump=dump)
+            silver_step = time.time() - started
 
-        expected = summarize(spark, production)
-        actual = summarize(spark, work_silver)
-        quarantined = spark.read.format("delta").load(work_quarantine).count()
+            started = time.time()
+            fact_merge = fact_listens.increment(spark, work["silver"], work["fact"],
+                                                work["dim"], built_at=now())
+            fact_step = time.time() - started
+
+            print(f"{dump[17:31]} Silver {silver_step:4.0f}초 넣음 "
+                  f"{silver_merge['numTargetRowsInserted']:>9,} 고침 "
+                  f"{silver_merge['numTargetRowsUpdated']:>7,} 파일 "
+                  f"{silver_merge['numTargetFilesRemoved']:>5,}→{silver_merge['numTargetFilesAdded']:<4,}"
+                  f" | 팩트 {fact_step:4.0f}초 넣음 {fact_merge.get('numTargetRowsInserted', 0):>9,} "
+                  f"지움 {fact_merge.get('numTargetRowsDeleted', 0):>7,} 파일 "
+                  f"{fact_merge.get('numTargetFilesRemoved', 0):>5,}→"
+                  f"{fact_merge.get('numTargetFilesAdded', 0):<4,}", flush=True)
+            steps.append({"dump": dump, "silver_seconds": round(silver_step, 1),
+                          "silver_merge": silver_merge, "fact_seconds": round(fact_step, 1),
+                          "fact_merge": fact_merge})
+
+        results = {}
+        for name in ("silver", "fact"):
+            expected = summarize(spark, production[name])
+            actual = summarize(spark, work[name])
+            results[name] = {
+                "production": {"rows": expected[0], "fingerprint": expected[1],
+                               "files": file_count(spark, production[name])},
+                "incremental": {"rows": actual[0], "fingerprint": actual[1],
+                                "files": file_count(spark, work[name])},
+                "same": expected == actual,
+            }
+            print(f"{name:6} 운영 {expected[0]:>13,}행 {expected[1]}")
+            print(f"{'':6} 증분 {actual[0]:>13,}행 {actual[1]}  "
+                  f"{'같다' if expected == actual else '다르다'}", flush=True)
+        quarantined = spark.read.format("delta").load(work["quarantine"]).count()
         production_quarantined = spark.read.format("delta").load(
             config.silver(schema.QUARANTINE_TABLE_NAME)).count()
-        same = expected == actual and quarantined == production_quarantined
-
-        print()
-        print(f"운영 Silver  {expected[0]:>13,}행  지문 {expected[1]}")
-        print(f"증분 Silver  {actual[0]:>13,}행  지문 {actual[1]}")
-        print(f"격리         운영 {production_quarantined:,}  증분 {quarantined:,}")
-        print(f"파일         운영 {file_count(spark, production):,}  "
-              f"증분 바탕 {base_files:,} → 끝 {file_count(spark, work_silver):,}")
+        print(f"격리   운영 {production_quarantined:,}  증분 {quarantined:,}")
+        same = (all(r["same"] for r in results.values())
+                and quarantined == production_quarantined)
         print("같다" if same else "다르다")
 
-        config.write_measurement("silver-increment-drill", {
+        config.write_measurement("increment-drill", {
             "held_out": held,
-            "base_seconds": round(base_seconds, 1),
+            "base_seconds": {"silver": round(silver_seconds, 1), "fact": round(fact_seconds, 1)},
             "base_files": base_files,
             "steps": steps,
-            "production": {"rows": expected[0], "fingerprint": expected[1]},
-            "incremental": {"rows": actual[0], "fingerprint": actual[1]},
+            "tables": results,
             "quarantine": {"production": production_quarantined, "incremental": quarantined},
             "same": same,
         })
