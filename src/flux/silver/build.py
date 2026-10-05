@@ -217,16 +217,116 @@ def quarantine(rejected: DataFrame, *, built_at) -> DataFrame:
     )
 
 
-def build(spark: SparkSession, bronze_path: str, *, built_at) -> tuple:
-    """Bronze를 읽어 (Silver, 격리) 두 데이터프레임을 만든다."""
-    bronze = spark.read.format("delta").load(bronze_path)
+USER_BUCKETS = 16
+
+
+def clustered(silver: DataFrame) -> DataFrame:
+    """한 사용자의 한 달 치가 파일 하나에 모이게 나눈다.
+
+    증분은 바뀐 키가 든 파일을 통째로 다시 쓴다. 덤프 사이 중복은 과거 기록을 다시
+    가져온 사용자 몇 명에게서 나오는데(덤프당 1~8명), 한 달을 키 해시로 흩어 두면 그
+    몇 명의 줄이 그 달의 모든 파일에 퍼진다. 실측에서 무거운 날은 52,000개 중
+    40,083개를 건드렸다. (달, 사용자)로 모으면 그날 건드릴 파일이 243개를 넘지 않는다
+    (scripts/investigations/measure_dump_overlap.py).
+
+    사용자 이름을 해시해 칸 16개로 나눈다. 사용자마다 파일을 따로 두면 파일이 사용자
+    수만큼 생긴다.
+    """
+    bucket = F.pmod(F.xxhash64(F.col("user_name")), F.lit(USER_BUCKETS))
+    return silver.repartition(F.col(schema.PARTITION_COLUMN), bucket)
+
+
+def _judge(bronze: DataFrame) -> tuple:
     judged = with_quality(bronze)
+    return (judged.filter(F.col("_reason").isNull()),
+            judged.filter(F.col("_reason").isNotNull()))
 
-    valid = judged.filter(F.col("_reason").isNull())
-    rejected = judged.filter(F.col("_reason").isNotNull())
 
-    silver = finalize(deduplicate(normalize(valid, built_at=built_at)))
+def build(spark: SparkSession, bronze_path: str, *, built_at, without=()) -> tuple:
+    """Bronze를 읽어 (Silver, 격리) 두 데이터프레임을 만든다.
+
+    `without`에 적은 덤프는 빼고 만든다. 증분을 검증할 때 마지막 며칠을 뺀 바탕을
+    만드는 데 쓴다.
+    """
+    bronze = spark.read.format("delta").load(bronze_path)
+    if without:
+        bronze = bronze.filter(~F.col("_source_dump").isin(list(without)))
+    valid, rejected = _judge(bronze)
+
+    silver = clustered(finalize(deduplicate(normalize(valid, built_at=built_at))))
     return silver, quarantine(rejected, built_at=built_at)
+
+
+def increment(spark: SparkSession, bronze_path: str, silver_path: str, *,
+              dump: str, built_at) -> tuple:
+    """덤프 하나를 Silver에 붙일 때 바꿔야 할 줄과 그 덤프의 격리 줄을 만든다.
+
+    dedup.pick_arrival의 Spark 표현이다. 새 덤프의 후보와, 같은 키로 Silver에 남아 있는
+    줄만 모아 1등을 다시 고른다. Bronze 전체를 다시 보지 않는다.
+
+    돌려주는 줄은 1등이 새 덤프에서 나온 키뿐이다. 1등이 원래 있던 줄이면 바꿀 것이
+    없다. 같은 덤프를 다시 붙이면 번호가 내용의 해시라 같은 줄이 다시 이기고,
+    merge가 그 줄을 건드리지 않는다.
+    """
+    bronze = (spark.read.format("delta").load(bronze_path)
+              .filter(F.col("_source_dump") == dump))
+    valid, rejected = _judge(bronze)
+    arrivals = finalize(normalize(valid, built_at=built_at))
+
+    current = (spark.read.format("delta").load(silver_path)
+               .join(arrivals.select(*dedup.KEY), list(dedup.KEY), "left_semi"))
+    winners = deduplicate(current.unionByName(arrivals))
+    changes = (winners.filter(F.col("_source_dump") == dump)
+               .select(*schema.column_names()))
+    return changes, quarantine(rejected, built_at=built_at)
+
+
+MERGE_METRICS = (
+    "numSourceRows", "numTargetRowsInserted", "numTargetRowsUpdated",
+    "numTargetFilesAdded", "numTargetFilesRemoved",
+)
+
+
+def merge(spark: SparkSession, changes: DataFrame, silver_path: str) -> dict:
+    """바꿀 줄을 Silver에 넣는다. 키가 있으면 고치고 없으면 넣는다.
+
+    고치는 조건에 "(덤프, 번호)가 다를 때"를 둔다. 같으면 같은 줄이라 다시 쓸 이유가
+    없고, 다시 쓰면 그 줄이 든 파일이 통째로 새로 써진다.
+
+    달을 조건에 넣는 것은 결과가 아니라 비용 때문이다. 키에 청취 시각이 있어 달은
+    이미 정해지지만, 달이 조건에 있어야 Delta가 파티션 단위로 짝을 맞춘다.
+    """
+    from delta.tables import DeltaTable
+
+    on = " AND ".join(
+        [f"t.{schema.PARTITION_COLUMN} = s.{schema.PARTITION_COLUMN}"]
+        + [f"t.{key} = s.{key}" for key in dedup.KEY])
+    target = DeltaTable.forPath(spark, silver_path)
+    before = target.history(1).select("version").first()[0]
+    (
+        target.alias("t")
+        .merge(changes.alias("s"), on)
+        .whenMatchedUpdateAll(
+            condition="t._source_dump <> s._source_dump OR t._record_id <> s._record_id")
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+    last = target.history(1).select("version", "operationMetrics").first()
+    if last["version"] == before:
+        return {name: 0 for name in MERGE_METRICS}
+    return {name: int(last["operationMetrics"].get(name, 0)) for name in MERGE_METRICS}
+
+
+def replace_quarantine(rejected: DataFrame, path: str, *, dump: str) -> None:
+    """그 덤프의 격리 줄만 갈아 끼운다. 격리는 줄 하나만 보고 정하므로 덤프 단위로 끝난다."""
+    escaped = dump.replace("'", "''")
+    (
+        rejected.write.format("delta")
+        .mode("overwrite")
+        .partitionBy(schema.QUARANTINE_PARTITION_COLUMN)
+        .option("replaceWhere", f"_source_dump = '{escaped}'")
+        .save(path)
+    )
 
 
 def write(df: DataFrame, path: str, *, partition: str, mode: str = "overwrite") -> None:
