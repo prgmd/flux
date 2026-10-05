@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pyspark.sql import functions as F
 
 from flux.bronze import schema as bronze_schema
-from flux.common import config
+from flux.common import config, job_runs
 from flux.common.spark import session as spark_session
 from flux.silver import build, schema
 
@@ -110,4 +110,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(job_runs.run(main))

@@ -13,7 +13,7 @@ from datetime import date
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
-from flux.common import config
+from flux.common import config, job_runs
 from flux.common.spark import session as spark_session
 from flux.gold import dim_artist, scd2
 
@@ -112,4 +112,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(job_runs.run(main))
