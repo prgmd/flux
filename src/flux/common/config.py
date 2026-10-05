@@ -17,6 +17,7 @@ SILVER = "silver"
 GOLD = "gold"
 DUMPS = "dumps"
 SCRATCH = "scratch"
+OPS = "ops"
 
 
 class StorageConfigError(RuntimeError):
@@ -108,6 +109,11 @@ def scratch(*segments: str) -> str:
     return path(SCRATCH, *segments)
 
 
+def ops(table: str) -> str:
+    """운영 기록의 자리. 데이터 층(Bronze, Silver, Gold) 밖에 둔다. 잡 실행 기록이 여기 있다."""
+    return path(OPS, table)
+
+
 def is_local() -> bool:
     return urlsplit(storage_root()).scheme == "file"
 
@@ -151,4 +157,14 @@ def write_measurement(name: str, payload: dict) -> Path:
     target.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    _written.append(name)
     return target
+
+
+_written: list = []
+
+
+def written_measurements() -> list:
+    """이 프로세스가 지금까지 남긴 측정 기록의 이름들. 잡 실행 기록이 그 잡의 결과를
+    가리킬 때 쓴다(flux.common.job_runs)."""
+    return list(_written)
