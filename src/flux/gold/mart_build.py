@@ -11,10 +11,10 @@
 pyspark를 부른다. 판단은 flux.gold.skew에 있다.
 """
 
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 
-from flux.gold import fact, scd2, skew
+from flux.gold import fact, mart, scd2, skew
 
 
 def _listens(spark: SparkSession, fact_path: str,
@@ -235,3 +235,37 @@ def fingerprint(*columns):
     안에 들어간다.
     """
     return F.sum(F.xxhash64(*columns).cast("decimal(38,0)"))
+
+
+def rising(daily: DataFrame, calendar: DataFrame, *, built_at,
+           top: int = mart.RISING_TOP, minimum: int = mart.MIN_PREVIOUS_LISTENS) -> DataFrame:
+    """일별 마트에서 주마다 급상승 아티스트 상위를 뽑는다. 규칙은 mart.rising이다.
+
+    주는 날짜 차원의 `week_start`(ISO 주의 월요일)로 묶는다. 주의 경계를 여기서 다시
+    계산하지 않는다. 이름은 그 주의 마지막 청취 날에 유효했던 이름이다.
+    """
+    weeks = calendar.select(F.col("date").alias("listened_date"), "week_start")
+    weekly = (
+        daily.join(weeks, "listened_date")
+        .groupBy("artist_mbid", "week_start")
+        .agg(F.sum("listens").alias("listens"),
+             F.max_by("artist_name", "listened_date").alias("artist_name"))
+    )
+    previous = weekly.select(
+        "artist_mbid",
+        F.date_add("week_start", 7).alias("week_start"),
+        F.col("listens").alias("previous_listens"),
+    )
+    growth = F.col("listens") / F.col("previous_listens")
+    order = Window.partitionBy("week_start").orderBy(
+        growth.desc(), F.col("listens").desc(), F.col("artist_mbid").asc())
+    return (
+        weekly.join(previous, ["artist_mbid", "week_start"])
+        .filter(F.col("previous_listens") >= minimum)
+        .withColumn("growth", growth)
+        .withColumn("rank", F.row_number().over(order))
+        .filter(F.col("rank") <= top)
+        .withColumn("_built_at", F.lit(built_at).cast("timestamp"))
+        .select("week_start", "rank", "artist_mbid", "artist_name", "listens",
+                "previous_listens", "growth", "_built_at")
+    )
