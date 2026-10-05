@@ -317,6 +317,20 @@ def merge(spark: SparkSession, changes: DataFrame, silver_path: str) -> dict:
     return {name: int(last["operationMetrics"].get(name, 0)) for name in MERGE_METRICS}
 
 
+def enable_change_feed(spark: SparkSession, path: str) -> None:
+    """Silver가 바뀐 줄을 따로 남기게 한다(Delta Change Data Feed).
+
+    증분 팩트는 Silver 전체를 다시 읽지 않고 "이번에 빠진 청취와 들어온 청취"만
+    읽는다(flux.gold.fact_listens.silver_changes). 그 목록이 이 기록이다. 병합이 줄을
+    고칠 때마다 고치기 전과 뒤가 함께 남는다.
+
+    통째로 다시 쓰면 표 설정이 그대로인지 장담하지 않고 매번 다시 켠다. 이미 켜져
+    있어도 결과는 같다.
+    """
+    spark.sql(f"ALTER TABLE delta.`{path}` "
+              "SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
+
+
 def replace_quarantine(rejected: DataFrame, path: str, *, dump: str) -> None:
     """그 덤프의 격리 줄만 갈아 끼운다. 격리는 줄 하나만 보고 정하므로 덤프 단위로 끝난다."""
     escaped = dump.replace("'", "''")

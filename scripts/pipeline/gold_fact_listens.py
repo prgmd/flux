@@ -4,7 +4,7 @@
 
     1. 펼친다
     2. 차원에 없는 아티스트를 찾아 placeholder를 차원에 넣는다
-    3. 팩트를 쓴다
+    3. 팩트를 쓴다. 읽은 Silver 버전을 처리 위치로 같은 커밋에 적는다
     4. 불변식을 확인한다
 
 2번을 3번 뒤로 미루면, 불변식을 확인하는 순간에 고아 아티스트가 있는 상태가
@@ -42,7 +42,9 @@ def main() -> int:
     started = time.time()
     try:
         built_at = datetime.now(timezone.utc)
-        silver = spark.read.format("delta").load(silver_path)
+        silver_version = fact_listens.table_version(spark, silver_path)
+        silver = (spark.read.format("delta")
+                  .option("versionAsOf", silver_version).load(silver_path))
         dim = spark.read.format("delta").load(dim_path)
 
         # 행 수와 배열 안 중복을 한 번에 센다. count()를 따로 부르면
@@ -73,7 +75,7 @@ def main() -> int:
             print("자리를 만들지 않는다 (--skip-placeholders)")
 
         # 2) 팩트를 쓴다
-        fact_listens.write(prepared, fact_path)
+        fact_listens.write(prepared, fact_path, silver_version=silver_version)
         elapsed = time.time() - started
 
         written = spark.read.format("delta").load(fact_path)

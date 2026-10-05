@@ -146,15 +146,159 @@ def with_artist_name(listens: DataFrame, dim: DataFrame,
     )
 
 
-def write(df: DataFrame, path: str) -> None:
-    """Delta로 쓴다. Silver 전체에서 다시 만들므로 통째로 덮어쓴다."""
-    (
-        df.write.format("delta")
+USER_BUCKETS = 16
+
+
+def clustered(df: DataFrame) -> DataFrame:
+    """한 사용자의 한 달 치가 파일 하나에 모이게 나눈다. Silver와 같은 이유다
+    (flux.silver.build.clustered). 증분이 고쳐 쓰는 줄은 과거 기록을 다시 가져온
+    사용자 몇 명에게 몰려 있다. 팩트에는 사용자 이름이 없어 사용자 번호로 나눈다."""
+    bucket = F.pmod(F.xxhash64(F.col("user_id")), F.lit(USER_BUCKETS))
+    return df.repartition(F.col(fact.PARTITION_COLUMN), bucket)
+
+
+def write(df: DataFrame, path: str, *, silver_version: int | None = None) -> None:
+    """Delta로 쓴다. Silver 전체에서 다시 만들므로 통째로 덮어쓴다.
+
+    `silver_version`을 주면 그 버전까지 반영했다는 처리 위치를 같은 커밋에 적는다
+    (fact.watermark_text). 증분은 거기서부터 이어 간다.
+    """
+    writer = (
+        clustered(df).write.format("delta")
         .mode("overwrite")
         .partitionBy(fact.PARTITION_COLUMN)
         .option("overwriteSchema", "true")
-        .save(path)
     )
+    if silver_version is not None:
+        writer = writer.option("userMetadata", fact.watermark_text(silver_version))
+    writer.save(path)
+
+
+class FullRebuildNeeded(Exception):
+    """증분으로 이어 갈 수 없다. 팩트를 Silver 전체에서 다시 만들어야 한다."""
+
+
+def table_version(spark: SparkSession, path: str) -> int:
+    from delta.tables import DeltaTable
+    return DeltaTable.forPath(spark, path).history(1).first()["version"]
+
+
+def watermark(spark: SparkSession, fact_path: str) -> int | None:
+    """팩트가 어느 Silver 버전까지 반영했는가. 가장 최근에 적힌 처리 위치를 읽는다."""
+    from delta.tables import DeltaTable
+    history = (DeltaTable.forPath(spark, fact_path).history()
+               .select("version", "userMetadata").orderBy(F.desc("version")).collect())
+    for row in history:
+        version = fact.parse_watermark(row["userMetadata"])
+        if version is not None:
+            return version
+    return None
+
+
+CHANGE_COLUMNS = ("_change_type", "_commit_version", "_commit_timestamp")
+
+
+def silver_changes(spark: SparkSession, silver_path: str, start: int, end: int) -> tuple:
+    """Silver 변경 기록에서 (빠진 청취, 들어온 청취)를 꺼낸다.
+
+    병합이 줄을 고치면 변경 기록에 고치기 전(`update_preimage`)과 고친 뒤
+    (`update_postimage`)가 둘 다 남는다. 앞엣것이 팩트에서 지울 청취, 뒤엣것과 새로
+    넣은 줄(`insert`)이 팩트에 넣을 청취다.
+
+    여러 버전을 한꺼번에 읽으면 범위 안에서 들어왔다가 다시 빠진 청취가 양쪽에 다
+    있다. 그 청취는 팩트에 들어간 적이 없으니 양쪽에서 지운다.
+    """
+    feed = (spark.read.format("delta")
+            .option("readChangeFeed", "true")
+            .option("startingVersion", start)
+            .option("endingVersion", end)
+            .load(silver_path))
+    kind = F.col("_change_type")
+    removed = feed.filter(kind.isin("update_preimage", "delete")).drop(*CHANGE_COLUMNS)
+    added = feed.filter(kind.isin("insert", "update_postimage")).drop(*CHANGE_COLUMNS)
+    keys = list(fact.LISTEN_KEY)
+    return (removed.join(added.select(*keys), keys, "left_anti"),
+            added.join(removed.select(*keys), keys, "left_anti"))
+
+
+MERGE_METRICS = (
+    "numSourceRows", "numTargetRowsInserted", "numTargetRowsDeleted",
+    "numTargetFilesAdded", "numTargetFilesRemoved",
+)
+
+
+def apply_changes(spark: SparkSession, fact_path: str, dim_path: str,
+                  removed: DataFrame, added: DataFrame, *, built_at,
+                  silver_to: int) -> dict:
+    """빠진 청취의 줄을 지우고 들어온 청취의 줄을 넣는다. 병합 한 번이다.
+
+    지우기와 넣기를 한 커밋에 하고, 처리 위치도 그 커밋에 적는다. 도중에 죽으면 셋 다
+    안 된 것이고, 다시 돌리면 같은 범위를 처음부터 한다.
+
+    아티스트가 비어 있는 줄도 짝을 맞춰야 하므로 아티스트는 NULL끼리도 같다고 보는
+    비교(`<=>`)로 맞춘다. 그냥 `=`이면 NULL 줄이 지워지지 않고 남는다.
+    """
+    from delta.tables import DeltaTable
+
+    gone = prepare(removed, built_at=built_at)
+    arriving = prepare(added, built_at=built_at)
+
+    dim = spark.read.format("delta").load(dim_path)
+    missing = missing_artists(arriving, dim)
+    placed = missing.count()
+    if placed:
+        placeholders(missing, dim).write.format("delta").mode("append").save(dim_path)
+
+    source = (gone.withColumn("_op", F.lit("delete"))
+              .unionByName(arriving.withColumn("_op", F.lit("insert"))))
+    on = (f"t.{fact.PARTITION_COLUMN} = s.{fact.PARTITION_COLUMN}"
+          " AND t._source_dump = s._source_dump AND t._record_id = s._record_id"
+          " AND t.artist_mbid <=> s.artist_mbid")
+    target = DeltaTable.forPath(spark, fact_path)
+    before = table_version(spark, fact_path)
+    key = "spark.databricks.delta.commitInfo.userMetadata"
+    spark.conf.set(key, fact.watermark_text(silver_to))
+    try:
+        (
+            target.alias("t")
+            .merge(source.alias("s"), on)
+            .whenMatchedDelete(condition="s._op = 'delete'")
+            .whenNotMatchedInsert(condition="s._op = 'insert'",
+                                  values={c: f"s.{c}" for c in fact.column_names()})
+            .execute()
+        )
+    finally:
+        spark.conf.unset(key)
+    last = target.history(1).select("version", "operationMetrics").first()
+    metrics = ({name: 0 for name in MERGE_METRICS} if last["version"] == before
+               else {name: int(last["operationMetrics"].get(name, 0)) for name in MERGE_METRICS})
+    metrics["placeholdersAdded"] = placed
+    return metrics
+
+
+def increment(spark: SparkSession, silver_path: str, fact_path: str, dim_path: str,
+              *, built_at) -> dict:
+    """팩트를 Silver의 지금 버전까지 따라가게 한다. 지난 처리 위치 다음부터 읽는다."""
+    from delta.tables import DeltaTable
+
+    done = watermark(spark, fact_path)
+    if done is None:
+        raise FullRebuildNeeded("팩트에 처리 위치가 없다. 전체에서 한 번 만들어야 한다")
+    latest = table_version(spark, silver_path)
+    if latest <= done:
+        return {"silver_from": done, "silver_to": latest, "applied": False}
+
+    operations = [r["operation"] for r in DeltaTable.forPath(spark, silver_path).history()
+                  .filter((F.col("version") > done) & (F.col("version") <= latest))
+                  .select("operation").collect()]
+    blocker = fact.blocking_operation(operations)
+    if blocker:
+        raise FullRebuildNeeded(f"Silver에 {blocker}가 있다. 팩트를 다시 만들어야 한다")
+
+    removed, added = silver_changes(spark, silver_path, done + 1, latest)
+    metrics = apply_changes(spark, fact_path, dim_path, removed, added,
+                            built_at=built_at, silver_to=latest)
+    return {"silver_from": done, "silver_to": latest, "applied": True, **metrics}
 
 
 def invariants(spark: SparkSession, fact_path: str, dim_path: str) -> dict:

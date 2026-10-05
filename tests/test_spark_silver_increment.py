@@ -1,4 +1,4 @@
-"""덤프 하나씩 붙인 Silver가 전체에서 다시 만든 Silver와 같은가.
+"""덤프 하나씩 붙인 Silver와 그것을 따라간 팩트가 전체에서 다시 만든 것과 같은가.
 
 dedup.pick_arrival이 순수 판단으로 고정한 성질을 Spark 표현(build.increment와
 build.merge)이 그대로 지키는지 본다. 덤프 셋에 키 넷을 두고 경우를 나눴다.
@@ -7,6 +7,7 @@ build.merge)이 그대로 지키는지 본다. 덤프 셋에 키 넷을 두고 �
     K2  a LASTFM, c LASTFM              출처와 아티스트 수가 같아 나중 덤프가 이긴다. 고친다
     K3  c만                             처음 보는 청취. 넣는다
     K4  a만                             새 덤프와 상관없다. 그대로다
+    K5  b NONE, c LASTFM                b가 처음 넣고 c가 이긴다. 아티스트가 없던 줄이 바뀐다
 
 c에는 격리될 줄이 하나 있다.
 """
@@ -21,6 +22,7 @@ pytest.importorskip("delta", reason="delta-spark가 없다")
 
 from pyspark.sql import functions as F
 
+from flux.gold import dim_artist, fact, fact_listens
 from flux.silver import build, schema
 
 pytestmark = pytest.mark.spark
@@ -60,10 +62,12 @@ BRONZE = [
     _row(_listen("alice", 1700000002, "msid-2", "LASTFM"), dump="dump-a", record_id=2),
     _row(_listen("bob", 1700000004, "msid-4"), dump="dump-a", record_id=4),
     _row(_listen("alice", 1700000001, "msid-1", "LASTFM"), dump="dump-b", record_id=11),
+    _row(_listen("carol", 1700000006, "msid-6"), dump="dump-b", record_id=12),
     _row(_listen("alice", 1700000001, "msid-1"), dump="dump-c", record_id=21),
     _row(_listen("alice", 1700000002, "msid-2", "LASTFM"), dump="dump-c", record_id=22),
     _row(_listen("bob", 1700000003, "msid-3"), dump="dump-c", record_id=23),
     _row(_listen(None, 1700000005, "msid-5"), dump="dump-c", record_id=24),
+    _row(_listen("carol", 1700000006, "msid-6", "LASTFM"), dump="dump-c", record_id=25),
 ]
 
 
@@ -103,9 +107,9 @@ def test_마지막_덤프를_증분으로_붙이면_전체와_같다(spark, tabl
     metrics = _attach(spark, bronze, silver, quarantine, "dump-c")
 
     assert _content(spark, silver) == _content(spark, full)
-    assert metrics["numSourceRows"] == 2
+    assert metrics["numSourceRows"] == 3
     assert metrics["numTargetRowsInserted"] == 1
-    assert metrics["numTargetRowsUpdated"] == 1
+    assert metrics["numTargetRowsUpdated"] == 2
 
 
 def test_덤프가_순서대로_오지_않아도_전체와_같다(spark, tables):
@@ -162,3 +166,106 @@ def test_한_사용자의_한_달_치는_파일_하나에_모인다(spark, wareh
              .agg(F.countDistinct("_file").alias("files"))
              .collect())
     assert [r["files"] for r in files] == [1]
+
+
+DIM_INPUT_SCHEMA = (
+    "artist_mbid string, name string, sort_name string, "
+    "country string, area_name string, type string, gender string, "
+    "begin_date string, end_date string, ended boolean, comment string, "
+    "mb_artist_id string"
+)
+
+
+def _dim(spark, warehouse):
+    path = warehouse("dim")
+    rows = [(MBID_A, "가수", "가수", None, None, None, None, None, None, None, None, "1")]
+    artists = spark.createDataFrame(rows, DIM_INPUT_SCHEMA)
+    dim_artist.create(dim_artist.prepare(artists, at="2026-09-15", release="r1"), path)
+    return path
+
+
+def _fact_from(spark, silver, path):
+    version = fact_listens.table_version(spark, silver)
+    rows = spark.read.format("delta").option("versionAsOf", version).load(silver)
+    fact_listens.write(fact_listens.prepare(rows, built_at=BUILT_AT), path,
+                       silver_version=version)
+
+
+def _fact_content(spark, path):
+    columns = [c for c in fact.column_names() if c != "_built_at"]
+    return sorted((tuple(r) for r in spark.read.format("delta").load(path)
+                   .select(*columns).collect()), key=repr)
+
+
+@pytest.fixture
+def expected_fact(spark, tables, warehouse):
+    bronze, _, _, full = tables
+    everything, _ = build.build(spark, bronze, built_at=BUILT_AT)
+    build.write(everything, full, partition=schema.PARTITION_COLUMN)
+    path = warehouse("fact-full")
+    _fact_from(spark, full, path)
+    return path
+
+
+def _base_with_fact(spark, tables, warehouse, without):
+    bronze, silver, quarantine, _ = tables
+    _write_base(spark, bronze, silver, quarantine, without=without)
+    build.enable_change_feed(spark, silver)
+    path = warehouse("fact")
+    _fact_from(spark, silver, path)
+    return path
+
+
+def test_팩트가_증분을_따라가면_전체에서_만든_것과_같다(spark, tables, warehouse, expected_fact):
+    """K2와 K5는 앞 줄을 지우고 c의 줄을 넣는다. K5의 앞 줄은 아티스트가 없어
+    artist_mbid가 NULL이다. NULL끼리 짝이 맞아야 지워진다. K3은 넣기만 한다."""
+    bronze, silver, quarantine, _ = tables
+    dim = _dim(spark, warehouse)
+    fact_path = _base_with_fact(spark, tables, warehouse, without=["dump-c"])
+
+    _attach(spark, bronze, silver, quarantine, "dump-c")
+    result = fact_listens.increment(spark, silver, fact_path, dim, built_at=LATER)
+
+    assert _fact_content(spark, fact_path) == _fact_content(spark, expected_fact)
+    assert result["numTargetRowsDeleted"] == 2
+    assert result["numTargetRowsInserted"] == 3
+
+
+def test_여러_버전을_한꺼번에_따라가도_같다(spark, tables, warehouse, expected_fact):
+    """b와 c를 붙인 뒤 팩트를 한 번에 따라간다. K5는 b에서 들어왔다가 c에서 빠진다.
+    범위 안에서 들어왔다 빠진 줄이라 팩트에 들어간 적이 없고, 넣으면 안 된다."""
+    bronze, silver, quarantine, _ = tables
+    dim = _dim(spark, warehouse)
+    fact_path = _base_with_fact(spark, tables, warehouse, without=["dump-b", "dump-c"])
+
+    _attach(spark, bronze, silver, quarantine, "dump-b")
+    _attach(spark, bronze, silver, quarantine, "dump-c")
+    fact_listens.increment(spark, silver, fact_path, dim, built_at=LATER)
+
+    assert _fact_content(spark, fact_path) == _fact_content(spark, expected_fact)
+
+
+def test_따라간_뒤_다시_돌리면_아무것도_하지_않는다(spark, tables, warehouse):
+    bronze, silver, quarantine, _ = tables
+    dim = _dim(spark, warehouse)
+    fact_path = _base_with_fact(spark, tables, warehouse, without=["dump-c"])
+    _attach(spark, bronze, silver, quarantine, "dump-c")
+    fact_listens.increment(spark, silver, fact_path, dim, built_at=LATER)
+    once = _fact_content(spark, fact_path)
+
+    again = fact_listens.increment(spark, silver, fact_path, dim, built_at=LATER)
+
+    assert again["applied"] is False
+    assert _fact_content(spark, fact_path) == once
+    assert fact_listens.watermark(spark, fact_path) == fact_listens.table_version(spark, silver)
+
+
+def test_Silver를_통째로_다시_쓰면_증분을_막는다(spark, tables, warehouse):
+    bronze, silver, _, _ = tables
+    dim = _dim(spark, warehouse)
+    fact_path = _base_with_fact(spark, tables, warehouse, without=["dump-c"])
+    everything, _ = build.build(spark, bronze, built_at=LATER)
+    build.write(everything, silver, partition=schema.PARTITION_COLUMN)
+
+    with pytest.raises(fact_listens.FullRebuildNeeded):
+        fact_listens.increment(spark, silver, fact_path, dim, built_at=LATER)

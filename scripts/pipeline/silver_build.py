@@ -36,6 +36,7 @@ def main() -> int:
         silver, rejected = build.build(spark, bronze_path, built_at=built_at)
 
         build.write(silver, silver_path, partition=schema.PARTITION_COLUMN)
+        build.enable_change_feed(spark, silver_path)
         build.write(rejected, quarantine_path,
                     partition=schema.QUARANTINE_PARTITION_COLUMN)
         elapsed = time.time() - started
