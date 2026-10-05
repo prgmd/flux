@@ -168,3 +168,47 @@ def is_placeholder(name) -> bool:
     그때까지 몇 개가 남아 있는지 세는 데 쓴다.
     """
     return name == PLACEHOLDER_NAME
+
+
+WATERMARK_PREFIX = "silver_version="
+
+
+def watermark_text(version: int) -> str:
+    """팩트 커밋에 남기는 처리 위치. 이 Silver 버전까지 반영했다는 뜻이다.
+
+    따로 표나 파일에 두지 않고 **팩트를 바꾸는 그 커밋**에 적는다(Delta의
+    userMetadata). 데이터와 처리 위치가 한 번에 기록되거나 둘 다 안 된다. 따로
+    두면 데이터는 썼는데 위치를 못 적은 채로 죽을 수 있고, 다시 돌리면 같은 변경을
+    두 번 넣는다.
+    """
+    return f"{WATERMARK_PREFIX}{version}"
+
+
+def parse_watermark(text) -> int | None:
+    """커밋에 적힌 처리 위치를 읽는다. 처리 위치가 아닌 기록이면 None."""
+    if not text or not text.startswith(WATERMARK_PREFIX):
+        return None
+    rest = text[len(WATERMARK_PREFIX):]
+    return int(rest) if rest.isdigit() else None
+
+
+INCREMENTAL_OPERATIONS = frozenset({
+    "MERGE", "SET TBLPROPERTIES", "OPTIMIZE", "VACUUM START", "VACUUM END",
+})
+
+
+def blocking_operation(operations) -> str | None:
+    """이 Silver 작업들을 변경 기록만으로 이어 붙일 수 있는가. 막는 첫 작업을 돌려준다.
+
+    증분 팩트는 Silver의 변경 기록(Change Data Feed)에서 빠진 청취와 들어온 청취만
+    읽는다. 병합은 바뀐 줄만 기록하므로 그대로 이어진다. 파일만 다시 묶거나(OPTIMIZE)
+    옛 파일을 치우는 것(VACUUM)은 내용이 그대로라 상관없다.
+
+    **Silver를 통째로 다시 쓴 작업(WRITE)이 사이에 있으면 막는다.** 그때는 팩트도
+    통째로 다시 만들어야 한다. 변경 기록으로 따라가면 1억 5천만 줄을 지우고 넣는
+    일이 되고, 그보다 다시 만드는 편이 싸고 확실하다.
+    """
+    for operation in operations:
+        if operation not in INCREMENTAL_OPERATIONS:
+            return operation
+    return None

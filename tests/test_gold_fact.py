@@ -277,3 +277,24 @@ def test_초기_적재가_valid_from을_먼_과거로_덮는다():
         encoding="utf-8")
     squeezed = re.sub(r"\s+", "", source)
     assert "withColumn(scd2.VALID_FROM,F.lit(scd2.FAR_PAST))" in squeezed
+
+
+def test_처리_위치를_적고_다시_읽는다():
+    assert fact.parse_watermark(fact.watermark_text(42)) == 42
+
+
+@pytest.mark.parametrize("text", [None, "", "다른 기록", "silver_version=", "silver_version=x"])
+def test_처리_위치가_아닌_기록은_None이다(text):
+    assert fact.parse_watermark(text) is None
+
+
+def test_병합만_있으면_이어_붙인다():
+    assert fact.blocking_operation(["MERGE", "MERGE", "SET TBLPROPERTIES"]) is None
+
+
+def test_파일만_다시_묶은_것은_막지_않는다():
+    assert fact.blocking_operation(["MERGE", "OPTIMIZE", "VACUUM START", "VACUUM END"]) is None
+
+
+def test_통째로_다시_쓴_작업이_끼면_막는다():
+    assert fact.blocking_operation(["MERGE", "WRITE", "MERGE"]) == "WRITE"
