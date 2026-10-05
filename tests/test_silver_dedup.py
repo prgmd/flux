@@ -160,3 +160,47 @@ def test_정렬_방향이_규칙과_맞다():
 
 def test_키는_명세_6_3을_따른다():
     assert dedup.KEY == ("user_name", "listened_at", "recording_msid")
+
+
+# ── 증분 ───────────────────────────────────────────────────
+
+MIDDLE = "listenbrainz-dump-2640-20260826-000003-incremental"
+
+ARRIVALS = {
+    EARLY: [c(5, dump=EARLY, source=MbidSource.LASTFM, artists=[A])],
+    MIDDLE: [c(9, dump=MIDDLE, source=MbidSource.LASTFM, artists=[A]),
+             c(2, dump=MIDDLE, source=MbidSource.NONE)],
+    LATE: [c(7, dump=LATE, source=MbidSource.LASTFM, artists=[A, B]),
+           c(1, dump=LATE, source=MbidSource.CLIENT)],
+}
+
+
+def _fold(order):
+    kept = None
+    for dump in order:
+        kept = dedup.pick_arrival(kept, ARRIVALS[dump])
+    return kept
+
+
+def test_덤프를_하나씩_붙여도_전체에서_고른_것과_같다():
+    """증분 Silver가 기대는 성질. 덤프가 오는 순서를 전부 바꿔 본다."""
+    everything = [row for rows in ARRIVALS.values() for row in rows]
+    expected = dedup.pick(everything)
+    answers = {_fold(order) for order in itertools.permutations(ARRIVALS)}
+    assert answers == {expected}
+
+
+def test_처음_보는_청취는_새_후보_중에서_고른다():
+    kept = dedup.pick_arrival(None, ARRIVALS[MIDDLE])
+    assert kept.record_id == 9
+
+
+def test_새_후보가_지면_지금_줄이_남는다():
+    current = c(3, dump=EARLY, source=MbidSource.MAPPING, artists=[A])
+    assert dedup.pick_arrival(current, ARRIVALS[LATE]) == current
+
+
+def test_같은_덤프를_다시_붙여도_그대로다():
+    """재실행. 번호가 내용의 해시라 같은 줄은 같은 후보로 다시 온다."""
+    kept = _fold([EARLY, MIDDLE, LATE])
+    assert dedup.pick_arrival(kept, ARRIVALS[LATE]) == kept

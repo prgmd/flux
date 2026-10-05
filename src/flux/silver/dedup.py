@@ -85,3 +85,20 @@ def pick(candidates):
     rows.sort(key=lambda c: len(c.artist_mbids), reverse=True)
     rows.sort(key=lambda c: source_rank(c.mbid_source))
     return rows[0]
+
+
+def pick_arrival(current, arrivals):
+    """새 덤프가 왔을 때 남길 줄. 지금 남아 있는 줄과 새 후보만 본다.
+
+    네 기준은 총 순서다. (덤프, 번호) 쌍이 유일해서 동점이 남지 않는다. 총 순서에서
+    1등을 고르는 것은 최솟값을 고르는 것과 같고, 최솟값은 나눠서 구해도 같다.
+    **전체 후보 중 1등은 "(앞에서 고른 1등, 새 후보) 중 1등"이다.** 그래서 증분은
+    Bronze 전체가 아니라 Silver에 남은 줄과 새 덤프만 보면 된다. 덤프가 순서대로
+    오지 않아도 같다.
+
+    `current`가 None이면 처음 보는 청취다.
+    """
+    rows = list(arrivals)
+    if current is not None:
+        rows.append(current)
+    return pick(rows)
