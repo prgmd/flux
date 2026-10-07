@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/assets/flux-logo.png" width="88" alt="Flux 로고">
-</p>
-
 ![Flux - Music Listening Analytics](docs/assets/flux-hero.png)
 
 # Flux
