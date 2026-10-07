@@ -1,5 +1,22 @@
+<p align="center">
+  <img src="docs/assets/flux-logo.png" width="88" alt="Flux 로고">
+</p>
+
+![Flux - Music Listening Analytics](docs/assets/flux-hero.png)
+
 # Flux
-ListenBrainz 기반 글로벌 음악 트렌드 분석 데이터 파이프라인
+
+**1.5억 건의 음악 청취 로그를 정제하고, 아티스트의 일별 청취와 주간 급상승을 분석하는 배치 데이터 파이프라인.**
+
+ListenBrainz의 실제 청취 기록과 MusicBrainz의 아티스트 메타데이터를 Spark로 처리합니다. Delta Lake에 원본과 정제 결과를 보존하고, 아티스트 개명 이력까지 반영한 분석 마트를 만듭니다.
+
+| 처리 규모 | 데이터 모델 | 실행 환경 | 현재 범위 |
+|---|---|---|---|
+| Bronze **155,713,649행** | Delta Lake, SCD Type 2 | 로컬 / Spark standalone 워커 3개 | 배치 적재부터 분석 마트까지 |
+
+[아키텍처](#architecture) / [진행 상황](#진행-상황) / [실측](#실측) / [검증](#검증) / [실행 안내](docs/running.md)
+
+> 구현 상태는 2026-10-07 코드 기준입니다. PostgreSQL 서빙 적재와 FastAPI, Airflow 파이프라인 통합은 후속 작업입니다.
 
 ---
 
@@ -9,11 +26,19 @@ Flux는 '변화', '흐름'을 의미하는 라틴어 Fluxus에서 유래했습�
 
 MetaBrainz의 ListenBrainz에서 발생한 음악 청취 로그를 수집, 가공하여 글로벌 음악 소비 동향, 시기별 트렌드, 아티스트 메타데이터 연계 분석을 수행하는 배치 데이터 파이프라인입니다.
 
-정제된 데이터 마트는 PostgreSQL과 FastAPI를 통해 서빙되며, 추후 AI/LLM 모델이 음악 시장 트렌드 리포트를 자동 생성하거나 추천 시스템의 학습 피처로 활용할 수 있는 구조를 목표로 합니다.
+현재 결과물은 Delta Lake의 분석 마트입니다. 다음 단계에서 PostgreSQL과 FastAPI를 연결해 조회를 제공하고, 장기적으로 음악 트렌드 리포트와 추천 시스템의 입력으로 활용하는 것을 목표로 합니다.
 
 ---
 
 ## Architecture
+
+![Flux의 현재 데이터 흐름과 실행 환경](docs/assets/architecture.png)
+
+청취 덤프는 **Bronze → Silver → Gold**로 흐릅니다. MusicBrainz 메타데이터는 별도 정제 경로로 아티스트 차원에 연결합니다. Silver에서 거절한 행은 격리 테이블에 보존합니다. 그림 아래의 실행 환경과 운영 기록은 이 데이터 흐름을 지원하는 구성입니다.
+
+**구현과 기동을 구분합니다.** Spark 배치 잡과 Delta 마트는 구현됐습니다. Docker Compose에 PostgreSQL과 Airflow 구성은 있지만, 서빙 적재와 조회 API는 아직 없고 Airflow DAG도 스모크 검증 단계입니다. 회색 영역은 이 후속 연결을 나타냅니다.
+
+그림의 근거와 수정 방법은 [아키텍처 설명](docs/architecture.md)에 있습니다.
 
 Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azure/databricks/lakehouse/medallion)로 3단계 정제 레이어를 둡니다.
 
@@ -23,10 +48,13 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | **Silver** | `listens_normalized` | MBID 우선순위 해석, 클라이언트 식별, 중복 제거, 품질 격리 |
 | | `invalid_listens` | 품질 규칙 위반 격리 테이블 |
 | **Gold** | `dim_artist` | 아티스트 차원. SCD Type 2로 개명 이력 보존 |
+| | `dim_date` | UTC 날짜와 ISO 주 기준을 공통으로 제공 |
+| | `dim_user` | 사용자 번호별 최신 이름과 청취 기간, 청취 수 |
 | | `fact_listens` | 청취 팩트. 청취 하나와 아티스트 하나의 쌍이 한 행인 스타 스키마 |
 | | `mart_daily_artist` | 일별 아티스트 청취 집계. 그날 유효했던 이름을 시점 조인으로 붙인다 |
+| | `mart_rising_artist` | ISO 주별 급상승 상위 20. 지난주 청취 20회 이상인 아티스트의 증가 비율로 순위 산정 |
 
-파티션은 Silver, Gold 모두 `listened_month`입니다. 명세는 `listened_date`였으나 청취 날짜가 7,877개로 흩어져 조각의 99.5%가 10만 행 미만이 되는 것을 실측하고 달 단위로 바꿨습니다.
+Silver 청취 테이블, Gold 팩트와 일별 마트의 파티션은 `listened_month`입니다. 명세는 `listened_date`였으나 청취 날짜가 7,877개로 흩어져 조각의 99.5%가 10만 행 미만이 되는 것을 실측하고 달 단위로 바꿨습니다.
 
 ---
 
@@ -38,13 +66,15 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | S1 | 덤프 수급 (체크섬 검증, 이어받기, 매니페스트) | 완료 |
 | S2 | Bronze 적재 | 완료 |
 | S3 | Silver 정제와 SCD Type 2 | 완료 |
-| S4 | Gold 마트와 스큐 실험 | 완료 |
+| S4 | Gold 차원과 일별 마트, 주간 급상승 마트, 스큐 실험 | 완료 |
 | S5 | PostgreSQL 서빙과 FastAPI | 예정 |
-| S6 | Airflow 통합과 운영 마감 | 예정 |
+| S6 | 잡 실행 기록 구현. Airflow 파이프라인 통합과 운영 마감 | 진행 중 |
 
 ---
 
 ## 실측
+
+아래 수치는 해당 측정 시점의 데이터 스냅샷입니다. 최신 잡 실행 결과와 구분해 읽습니다.
 
 2026-08-08 ~ 09-07 증분 덤프 31일치 기준입니다.
 
@@ -135,3 +165,22 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 
 - Kafka 기반 이벤트 수집. 정적 덤프 재생에는 명분이 약해 실시간 API 연동 시점으로 미룸
 - Spark Structured Streaming 적재
+
+
+---
+
+## 시작하기
+
+데이터 경로 설정, 이미지 빌드, Spark 잡과 테스트 실행은 [실행 안내](docs/running.md)를 따릅니다. 데이터는 저장소 밖에 두며 원본 덤프와 Delta 테이블은 Git에 포함하지 않습니다.
+
+## 더 읽기
+
+| 문서 | 내용 |
+|---|---|
+| [현재 아키텍처](docs/architecture.md) | 데이터 의존 관계, 실행 환경, 구현 상태와 그림 재생성 |
+| [실행 안내](docs/running.md) | 컨테이너와 마운트, 잡 실행, 테스트 |
+| [MBID 해석](docs/mbid_resolution.md) | 아티스트 식별자의 출처 우선순위 |
+| [중복 제거](docs/deduplication.md) | 동일 청취에서 남길 행의 결정 규칙 |
+| [파티션 설계](docs/partitioning.md) | 월 단위 파티션을 선택한 근거 |
+| [보존 정책](docs/retention.md) | Delta 로그와 파일의 보존 |
+| [실측 기록](docs/measurements/) | 최적화와 장애 실험의 결과 및 재현 근거 |
