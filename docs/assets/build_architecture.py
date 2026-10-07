@@ -43,5 +43,3 @@ text(1245,953,'Batch MVP. Kafka and streaming',22)
 text(1245,986,'are deferred to Phase 2.',22)
 text(60,1060,'Data-flow view: arrows show logical dependencies, not network connections.',21,'#94a3b8')
 im.save(ROOT/'architecture.png')
-
-
