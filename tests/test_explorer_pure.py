@@ -125,3 +125,42 @@ def test_Silver_코드가_읽는_경로를_빠짐없이_소개한다():
     used = set(re.findall(r'_json(?:_array)?\(\s*"(\$[^"]+)"', BUILD_SOURCE))
     declared = {path for _, paths, _ in provenance.PROVENANCE for path in paths} | set(provenance.QUALITY_PATHS)
     assert used <= declared, f"소개하지 않은 경로: {sorted(used - declared)}"
+
+
+MAPPING = "11111111-1111-1111-1111-111111111111"
+CLIENT = "22222222-2222-2222-2222-222222222222"
+LASTFM = "33333333-3333-3333-3333-333333333333"
+
+
+def info(**kwargs):
+    return {"track_metadata": {"additional_info": kwargs}}
+
+
+def test_MAPPING이_있으면_MAPPING이다():
+    document = {"track_metadata": {"mbid_mapping": {"recording_mbid": MAPPING, "artist_mbids": ["a", "b"]},
+                                   "additional_info": {"recording_mbid": CLIENT, "artist_mbids": ["c"]}}}
+    assert provenance.resolve_source(document) == ("MAPPING", 2)
+
+
+def test_MAPPING이_없으면_CLIENT_다음이_LASTFM이다():
+    assert provenance.resolve_source(info(recording_mbid=CLIENT, artist_mbids=["a"])) == ("CLIENT", 1)
+    assert provenance.resolve_source(info(lastfm_track_mbid=LASTFM, lastfm_artist_mbid="x")) == ("LASTFM", 1)
+
+
+def test_recording이_없고_아티스트만_있으면_NONE이다():
+    assert provenance.resolve_source(info(artist_mbids=["a", "b", "c"])) == ("NONE", 3)
+
+
+def test_아무것도_없으면_NONE과_0이다():
+    assert provenance.resolve_source({}) == ("NONE", 0)
+    assert provenance.resolve_source(info(submission_client="x")) == ("NONE", 0)
+
+
+def test_recording을_고른_같은_출처의_아티스트를_센다():
+    document = info(recording_mbid=CLIENT, artist_mbids=["a"], lastfm_artist_mbid="x")
+    assert provenance.resolve_source(document) == ("CLIENT", 1)
+
+
+def test_빈_문자열과_빈_배열은_없는_것으로_본다():
+    assert provenance.resolve_source(info(recording_mbid="", artist_mbids=[])) == ("NONE", 0)
+    assert provenance.resolve_source(info(recording_mbid=CLIENT, artist_mbids=["", None])) == ("CLIENT", 0)

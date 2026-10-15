@@ -47,3 +47,30 @@ def json_path_value(document, path):
             return None
         current = current[key]
     return current
+
+
+SOURCE_LABELS = ("MAPPING", "CLIENT", "LASTFM")
+
+
+def _artist_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [v for v in value if v]
+    return [value] if value else []
+
+
+def resolve_source(document):
+    """원본 JSON에서 읽히는 MBID의 출처와 아티스트 수를 어림한다. (출처, 아티스트 수)
+
+    flux.silver.build.normalize와 같은 순서로 보되 **UUID 형식 검사는 하지 않는다.** 그래서 형식이
+    틀린 값이 있으면 실제 Silver와 다를 수 있다. 화면에서 중복 후보를 비교하는 데만 쓴다.
+    """
+    for label, recording_path, artist_path in zip(SOURCE_LABELS, RECORDING_PATHS, ARTIST_PATHS, strict=True):
+        if json_path_value(document, recording_path):
+            return label, len(_artist_list(json_path_value(document, artist_path)))
+    for artist_path in ARTIST_PATHS:
+        artists = _artist_list(json_path_value(document, artist_path))
+        if artists:
+            return "NONE", len(artists)
+    return "NONE", 0
