@@ -169,6 +169,18 @@ S4의 조인 전략 비교에 쓴다.
 전부 데이터 루트의 `measurements/<이름>.json`에 남는다. 문서로 옮긴 것이
 `docs/measurements/`다.
 
+### 질의 실행(Spark와 Docker 없이)
+
+DuckDB로 Delta 표를 읽기 전용으로 조회한다. 데이터 루트는 `.env`의 `FLUX_STORAGE_ROOT`에서 읽는다.
+
+```bash
+venv/Scripts/python scripts/investigations/query.py scripts/investigations/sql/top_artists.sql
+venv/Scripts/python scripts/investigations/query.py scripts/investigations/sql/short_plays.sql
+venv/Scripts/python scripts/investigations/query.py -e "select count(*) from {silver}"
+```
+
+SQL 안에서 `{bronze}`, `{silver}`, `{fact}`, `{dim_artist}`, `{mart_daily}` 같은 이름이 해당 Delta 폴더로 바뀐다. 쓰는 질의는 거부한다. `raw_json`을 건드리는 질의는 30초 안팎이 걸린다.
+
 ### 실행 기록
 
 Spark 잡은 끝날 때 성공이든 실패든 `ops/job_runs`(Delta)에 한 줄을 남긴다. 잡 이름,
