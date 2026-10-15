@@ -181,6 +181,19 @@ venv/Scripts/python scripts/investigations/query.py -e "select count(*) from {si
 
 SQL 안에서 `{bronze}`, `{silver}`, `{fact}`, `{dim_artist}`, `{mart_daily}` 같은 이름이 해당 Delta 폴더로 바뀐다. 쓰는 질의는 거부한다. `raw_json`을 건드리는 질의는 30초 안팎이 걸린다.
 
+### 탐색 화면(나만 보는 로컬 화면)
+
+청취 한 줄이 Bronze, Silver, Gold를 지나는 모습을 눈으로 따라가는 Streamlit 화면이다. 표본 파일을 읽기 전용으로 열고
+Spark와 Docker가 필요 없다.
+
+```bash
+venv/Scripts/python explorer/build_sample.py            # 표본 사용자 38명의 줄을 세 층에서 뽑는다(약 7분, 한 번만)
+explorer/.venv/Scripts/streamlit run explorer/app.py     # 화면을 연다
+```
+
+화면 환경은 `explorer/.venv`에 따로 둔다(`explorer/requirements.txt`). 화면은 셋이다. 청취 한 줄 따라가기, SQL 창(읽기 전용),
+표본 안내. 주소에 `?user=이름&ts=초&msid=번호`를 붙이면 그 청취를 바로 연다.
+
 ### 실행 기록
 
 Spark 잡은 끝날 때 성공이든 실패든 `ops/job_runs`(Delta)에 한 줄을 남긴다. 잡 이름,
