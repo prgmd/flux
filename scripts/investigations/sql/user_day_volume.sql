@@ -6,7 +6,7 @@ with per_day as (
 select count(*) filter (where n > 500) as user_days_over_500,
        count(*) filter (where n > 1000) as user_days_over_1000,
        count(*) filter (where n > 2000) as user_days_over_2000,
-       count(*) filter (where n > 2880) as user_days_over_physical_limit,
+       count(*) filter (where n > 2880) as user_days_over_2880,
        count(distinct user_name) filter (where n > 1000) as users_with_a_day_over_1000,
        sum(n) filter (where n > 1000) as listens_on_those_days,
        round(sum(n) filter (where n > 1000) * 100.0 / sum(n), 2) as pct_of_all_listens,
