@@ -9,6 +9,7 @@
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import duckdb
@@ -183,10 +184,24 @@ def page_trace():
         st.info("위 표에서 한 줄을 고르면 그 청취가 Bronze, Silver, Gold를 지나는 모습이 나온다.")
 
 
+def run_timed(cur, statement, repeat):
+    """질의를 repeat번 돌려 마지막 결과와 회마다 걸린 초를 돌려준다. 결과는 최대 1,000줄까지 가져온다."""
+    seconds = []
+    frame = None
+    for _ in range(repeat):
+        started = time.perf_counter()
+        frame = cur.sql(statement).limit(1000).df()
+        seconds.append(time.perf_counter() - started)
+    return frame, seconds
+
+
 def page_sql():
     st.write("읽기 전용. 표본의 표: `bronze`, `silver`, `fact`, `dim_artist`, `quarantine`, `sample_users`. "
              "전체 데이터가 아니라 표본이다.")
     sql = st.text_area("SQL", "select * from silver limit 10", height=170)
+    left, right = st.columns([1, 4])
+    repeat = int(left.number_input("반복 횟수", min_value=1, max_value=10, value=1))
+    right.caption("여러 번 돌리면 첫 회(캐시가 빈 상태)와 이후의 시간을 비교할 수 있다.")
     if not st.button("실행"):
         return
     if not queryrun.is_read_only(sql):
@@ -195,10 +210,16 @@ def page_sql():
     cur = cursor()
     for statement in queryrun.statements(sql):
         try:
-            st.dataframe(cur.sql(statement).limit(1000).df(), width="stretch")
+            frame, seconds = run_timed(cur, statement, repeat)
         except Exception as error:
             st.error(f"{type(error).__name__}: {error}")
             return
+        runs = ", ".join(f"{value:.3f}" for value in seconds)
+        summary = f"{len(frame):,}줄(최대 1,000줄까지 표시), {runs}초" if repeat > 1 else             f"{len(frame):,}줄(최대 1,000줄까지 표시), {seconds[0]:.3f}초"
+        if repeat > 1:
+            summary += f", 가장 빠른 회 {min(seconds):.3f}초"
+        st.caption(summary)
+        st.dataframe(frame, width="stretch")
 
 
 def page_about():
