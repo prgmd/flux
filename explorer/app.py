@@ -217,7 +217,7 @@ def page_sql():
         runs = ", ".join(f"{value:.3f}" for value in seconds)
         summary = f"{len(frame):,}줄(최대 1,000줄까지 표시), {runs}초" if repeat > 1 else             f"{len(frame):,}줄(최대 1,000줄까지 표시), {seconds[0]:.3f}초"
         if repeat > 1:
-            summary += f", 가장 빠른 회 {min(seconds):.3f}초"
+            summary += f", 가장 느린 회 {max(seconds):.3f}초, 가장 빠른 회 {min(seconds):.3f}초"
         st.caption(summary)
         st.dataframe(frame, width="stretch")
 
