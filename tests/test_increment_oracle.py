@@ -4,7 +4,7 @@ import pytest
 
 duckdb = pytest.importorskip("duckdb")
 
-from scripts.drills.verify_increment_counts import compare, local_files, verify_inputs
+from scripts.drills.verify_increment_counts import audit_production, compare, local_files, verify_inputs
 
 
 @pytest.fixture
@@ -63,3 +63,19 @@ def test_input_quality_is_checked_independently(tmp_path, wrong_quarantine):
             verify_inputs(report, tmp_path)
     else:
         assert verify_inputs(report, tmp_path)["first"]["ok"]
+
+
+def test_host_audit_detects_original_table_changes(tmp_path):
+    expected = {}
+    for name, relative in [("bronze", "bronze/raw_listens"), ("silver", "silver/listens_normalized")]:
+        log = tmp_path / relative / "_delta_log"
+        log.mkdir(parents=True)
+        (log / "00000000000000000000.json").write_text(
+            json.dumps({"metaData": {"id": name}}), encoding="utf-8")
+        expected[name] = {"id": name, "version": 0}
+    report = {"production_identity_before": expected}
+    assert audit_production(report, tmp_path) == expected
+    (tmp_path / "silver/listens_normalized/_delta_log/00000000000000000001.json").write_text(
+        json.dumps({"commitInfo": {}}), encoding="utf-8")
+    with pytest.raises(AssertionError):
+        audit_production(report, tmp_path)

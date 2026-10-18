@@ -82,6 +82,24 @@ def verify_inputs(report, root):
     return results
 
 
+def audit_production(report, root):
+    tables = {"bronze": "bronze/raw_listens", "silver": "silver/listens_normalized"}
+    actual = {}
+    for name, relative in tables.items():
+        log = root / relative / "_delta_log"
+        commits = sorted(path for path in log.glob("*.json")
+                         if len(path.stem) == 20 and path.stem.isdigit())
+        metadata = None
+        for path in commits:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                value = json.loads(line)
+                if "metaData" in value:
+                    metadata = value["metaData"]
+        actual[name] = {"id": metadata["id"], "version": int(commits[-1].stem)}
+    assert actual == report["production_identity_before"]
+    return actual
+
+
 def main(argv=None):
     import duckdb
 
@@ -99,7 +117,8 @@ def main(argv=None):
     connection.execute("SET memory_limit='12GB'")
     connection.execute("SET preserve_insertion_order=false")
     connection.execute("SET temp_directory='" + str(work / "oracle-temp").replace("\\", "/").replace("'", "''") + "'")
-    output = {"runs": {}, "baseline_quality": report["baseline_quality"]}
+    output = {"runs": {}, "baseline_quality": report["baseline_quality"],
+              "host_production_identity": audit_production(report, root)}
     output["inputs"] = verify_inputs(report, root)
     expected_path = work / "expected_silver.json"
     if expected_path.exists():
