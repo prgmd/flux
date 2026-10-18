@@ -39,6 +39,7 @@ def test_새_청취와_재실행과_곡_수정을_정확히_반영한다(spark, 
 
     def write(rows):
         (spark.createDataFrame(rows, INPUT_SCHEMA).write.format("delta")
+         .option("delta.enableChangeDataFeed", "true")
          .mode("overwrite").save(source_path))
 
     def read():
@@ -65,3 +66,83 @@ def test_원본과_같은_경로에_집계를_쓰지_않는다(spark, warehouse)
     path = warehouse("silver")
     with pytest.raises(ValueError, match="같은 경로"):
         counts.refresh(spark, path, path + "/")
+
+
+def test_초기화_뒤에는_전체_집계_없이_증분과_빈_변경을_처리한다(
+        spark, warehouse, monkeypatch):
+    from delta.tables import DeltaTable
+
+    source = warehouse("increment-source")
+    target = warehouse("increment-counts")
+    (spark.createDataFrame([("1", A, "a")], INPUT_SCHEMA).write.format("delta")
+     .option("delta.enableChangeDataFeed", "true").save(source))
+    counts.refresh(spark, source, target)
+
+    def forbid_full_scan(*args, **kwargs):
+        raise AssertionError("증분 실행에서 전체 집계를 호출했다")
+
+    monkeypatch.setattr(counts, "aggregate", forbid_full_scan)
+    (spark.createDataFrame([("1", A, "b"), ("2", B, "c")], INPUT_SCHEMA)
+     .write.format("delta").mode("append").save(source))
+    version = counts.refresh(spark, source, target)
+    assert values(spark.read.format("delta").load(target)) == {("1", A): 2, ("2", B): 1}
+    counts.refresh(spark, source, target)
+    assert values(spark.read.format("delta").load(target)) == {("1", A): 2, ("2", B): 1}
+
+    table = DeltaTable.forPath(spark, source)
+    table.update("recording_msid = 'a'", {"recording_mbid": f"'{B}'"})
+    counts.refresh(spark, source, target)
+    assert values(spark.read.format("delta").load(target)) == {
+        ("1", A): 1, ("1", B): 1, ("2", B): 1}
+    table.delete("user_id = '2'")
+    table.update("recording_msid = 'b'", {"recording_mbid": "NULL"})
+    counts.refresh(spark, source, target)
+    assert values(spark.read.format("delta").load(target)) == {("1", B): 1}
+
+    (spark.createDataFrame([("3", None, "unknown")], INPUT_SCHEMA)
+     .write.format("delta").mode("append").save(source))
+    latest = counts.refresh(spark, source, target)
+    assert latest > version
+    assert counts.processed_version(spark, target) == latest
+    counts.refresh(spark, source, target)
+    assert values(spark.read.format("delta").load(target)) == {("1", B): 1}
+
+
+def test_커밋_직후_실패해도_재시도에서_두번_더하지_않는다(
+        spark, warehouse, monkeypatch):
+    source = warehouse("retry-source")
+    target = warehouse("retry-counts")
+    (spark.createDataFrame([("1", A, "a")], INPUT_SCHEMA).write.format("delta")
+     .option("delta.enableChangeDataFeed", "true").save(source))
+    counts.refresh(spark, source, target)
+    (spark.createDataFrame([("1", A, "b")], INPUT_SCHEMA)
+     .write.format("delta").mode("append").save(source))
+    apply = counts.apply_changes
+
+    def fail_after_commit(*args, **kwargs):
+        apply(*args, **kwargs)
+        raise RuntimeError("커밋 직후 실패")
+
+    monkeypatch.setattr(counts, "apply_changes", fail_after_commit)
+    with pytest.raises(RuntimeError, match="커밋 직후"):
+        counts.refresh(spark, source, target)
+    counts.refresh(spark, source, target)
+    assert values(spark.read.format("delta").load(target)) == {("1", A): 2}
+
+
+def test_다른_원본이나_처리위치_없는_기존_집계는_명시적_재생성이_필요하다(
+        spark, warehouse):
+    source = warehouse("source-a")
+    other = warehouse("source-b")
+    target = warehouse("existing-counts")
+    for path in (source, other):
+        (spark.createDataFrame([("1", A, "a")], INPUT_SCHEMA).write.format("delta")
+         .option("delta.enableChangeDataFeed", "true").save(path))
+    (spark.createDataFrame([("1", A, 10)], "user_id string, recording_mbid string, play_count long")
+     .write.format("delta").save(target))
+    with pytest.raises(counts.FullRebuildNeeded):
+        counts.refresh(spark, source, target)
+    counts.refresh(spark, source, target, rebuild=True)
+    assert values(spark.read.format("delta").load(target)) == {("1", A): 1}
+    with pytest.raises(counts.FullRebuildNeeded):
+        counts.refresh(spark, other, target)

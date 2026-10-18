@@ -40,7 +40,8 @@ def main() -> int:
         build.write(rejected, quarantine_path,
                     partition=schema.QUARANTINE_PARTITION_COLUMN)
         user_recording_counts.refresh(
-            spark, silver_path, config.silver(user_recording_counts.TABLE_NAME))
+            spark, silver_path, config.silver(user_recording_counts.TABLE_NAME),
+            rebuild=True)
         elapsed = time.time() - started
 
         bronze_rows = spark.read.format("delta").load(bronze_path).count()

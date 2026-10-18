@@ -42,7 +42,7 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 |---|---|---|
 | **Bronze** | `raw_listens` | 원본 JSON 보존. 덤프 단위 `replaceWhere`로 멱등 적재 |
 | **Silver** | `listens_normalized` | MBID 우선순위 해석, 클라이언트 식별, 중복 제거, 품질 격리 |
-| **Silver** | `user_recording_counts` | 사용자와 recording MBID별 청취 횟수. [집계 규칙](docs/user_recording_counts.md). 코드 구현, 운영 생성 전 |
+| **Silver** | `user_recording_counts` | 사용자와 recording MBID별 청취 횟수, CDF 증분 갱신. [집계 규칙](docs/user_recording_counts.md). 코드 구현, 운영 생성 전 |
 | | `invalid_listens` | 품질 규칙 위반 격리 테이블 |
 | **Gold** | `dim_artist` | 아티스트 차원. SCD Type 2로 개명 이력 보존 |
 | | `dim_date` | UTC 날짜와 ISO 주 기준을 공통으로 제공 |
