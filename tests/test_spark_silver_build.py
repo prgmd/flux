@@ -135,8 +135,8 @@ def test_격리와_통과의_합이_입력과_같다(spark):
 @pytest.mark.parametrize(
     "played, expected_reason",
     [
-        (9999, quality.Reason.PLAYED_TOO_SHORT),
-        (10000, None),
+        (29999, quality.Reason.PLAYED_TOO_SHORT),
+        (30000, None),
         (None, None),
     ],
 )
@@ -165,11 +165,11 @@ def test_사용자별_곡_집계_전에_중복과_짧은_재생을_제외한다(
 
     documents = []
     for timestamp, played, mbid in [
-        (1700000000, 10000, MBID_A),
-        (1700000000, 10000, MBID_A),
+        (1700000000, 30000, MBID_A),
+        (1700000000, 30000, MBID_A),
         (1700000300, None, MBID_A),
-        (1700000600, 9999, MBID_A),
-        (1700000900, 10000, None),
+        (1700000600, 29999, MBID_A),
+        (1700000900, 30000, None),
     ]:
         info = {"recording_mbid": mbid}
         if played is not None:

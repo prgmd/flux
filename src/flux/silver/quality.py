@@ -16,7 +16,7 @@ pyspark를 부르지 않는다. "이 레코드가 성한가"는 Spark가 필요 
 from dataclasses import dataclass
 
 EPOCH_1970 = 0
-MIN_MS_PLAYED = 10_000
+MIN_MS_PLAYED = 30_000
 
 
 class Reason:
@@ -27,7 +27,7 @@ class Reason:
     LISTENED_AT_FUTURE = "청취 시각이 적재 시각보다 미래"
     USER_NAME_MISSING = "사용자 이름 없음"
     METADATA_MISSING = "track_metadata 없음"
-    PLAYED_TOO_SHORT = "재생 시간이 10초 미만"
+    PLAYED_TOO_SHORT = "재생 시간이 30초 미만"
 
 
 @dataclass(frozen=True)

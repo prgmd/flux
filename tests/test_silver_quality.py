@@ -180,12 +180,29 @@ def test_앞의_이름이_못_쓸_값이면_뒤를_본다():
     document["listened_at"] = "깨짐"
     assert quality.listened_at_of(document) == LISTENED
 
-def test_재생_시간이_10초_미만이면_격리한다():
+@pytest.mark.parametrize(
+    "played, rejected",
+    [(9999, True), (10000, True), (29999, True), (30000, False),
+     (None, False), ("unknown", False)],
+)
+def test_재생_시간_30초_경계와_미확인값(played, rejected):
     document = doc()
-    document["track_metadata"]["additional_info"]["ms_played"] = 9999
+    document["track_metadata"]["additional_info"]["ms_played"] = played
     verdict = judge(document)
-    assert verdict.ok is False
-    assert verdict.reason == "재생 시간이 10초 미만"
+    assert verdict.ok is not rejected
+    assert verdict.reason == ("재생 시간이 30초 미만" if rejected else None)
+
+
+def test_곡_길이가_짧아도_재생_시간_기준의_예외로_삼지_않는다():
+    document = doc()
+    document["track_metadata"]["additional_info"].update(ms_played=20000, duration_ms=20000)
+    assert judge(document).ok is False
+
+
+def test_곡_길이로_누락된_재생_시간을_대체하지_않는다():
+    document = doc()
+    document["track_metadata"]["additional_info"]["duration_ms"] = 20000
+    assert judge(document).ok is True
 
 # ── 격리 드릴의 불량 견본 ───────────────────────────────────
 
