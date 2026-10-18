@@ -237,11 +237,14 @@ def apply_changes(spark: SparkSession, fact_path: str, dim_path: str,
 
     아티스트가 비어 있는 줄도 짝을 맞춰야 하므로 아티스트는 NULL끼리도 같다고 보는
     비교(`<=>`)로 맞춘다. 그냥 `=`이면 NULL 줄이 지워지지 않고 남는다.
+
+    넣을 줄과 병합의 원본은 한 번 계산해 고정한다. 자리 행 확인과 병합의 두 단계가
+    각자 변경 기록부터 다시 읽지 않게 한다(flux.silver.build.increment와 같은 이유).
     """
     from delta.tables import DeltaTable
 
     gone = prepare(removed, built_at=built_at)
-    arriving = prepare(added, built_at=built_at)
+    arriving = prepare(added, built_at=built_at).localCheckpoint()
 
     dim = spark.read.format("delta").load(dim_path)
     missing = missing_artists(arriving, dim)
@@ -250,7 +253,8 @@ def apply_changes(spark: SparkSession, fact_path: str, dim_path: str,
         placeholders(missing, dim).write.format("delta").mode("append").save(dim_path)
 
     source = (gone.withColumn("_op", F.lit("delete"))
-              .unionByName(arriving.withColumn("_op", F.lit("insert"))))
+              .unionByName(arriving.withColumn("_op", F.lit("insert")))
+              .localCheckpoint())
     on = (f"t.{fact.PARTITION_COLUMN} = s.{fact.PARTITION_COLUMN}"
           " AND t._source_dump = s._source_dump AND t._record_id = s._record_id"
           " AND t.artist_mbid <=> s.artist_mbid")
