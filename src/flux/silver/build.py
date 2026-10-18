@@ -270,18 +270,34 @@ def increment(spark: SparkSession, bronze_path: str, silver_path: str, *,
     돌려주는 줄은 1등이 새 덤프에서 나온 키뿐이다. 1등이 원래 있던 줄이면 바꿀 것이
     없다. 같은 덤프를 다시 붙이면 번호가 내용의 해시라 같은 줄이 다시 이기고,
     merge가 그 줄을 건드리지 않는다.
+
+    **기존 줄은 1등을 가리는 데 필요한 컬럼만 읽는다.** 키 셋과 정렬 기준 넷이다.
+    내보내는 것은 새 덤프의 줄뿐이라 기존 줄의 나머지 컬럼은 쓸 일이 없다. 전부 읽으면
+    1억 5천만 줄의 18개 컬럼을 셔플까지 끌고 간다.
+
+    **새 덤프의 후보와 바꿀 줄은 한 번 계산해 고정한다(`localCheckpoint`).** Spark는
+    데이터프레임을 쓸 때마다 처음부터 다시 계산한다. 후보는 키 뽑기와 비교에 두 번
+    쓰이고, 병합은 "고칠 파일 찾기"와 "쓰기"에서 원본을 두 번 계산한다. 고정하지 않으면
+    Bronze의 JSON 파싱과 Silver 훑기가 그 횟수만큼 반복된다.
     """
     bronze = (spark.read.format("delta").load(bronze_path)
               .filter(F.col("_source_dump") == dump))
     valid, rejected = _judge(bronze)
-    arrivals = finalize(normalize(valid, built_at=built_at))
+    arrivals = finalize(deduplicate(normalize(valid, built_at=built_at))).localCheckpoint()
 
-    current = (spark.read.format("delta").load(silver_path)
-               .join(arrivals.select(*dedup.KEY), list(dedup.KEY), "left_semi"))
-    winners = deduplicate(current.unionByName(arrivals))
-    changes = (winners.filter(F.col("_source_dump") == dump)
-               .select(*schema.column_names()))
+    ranked = list(dedup.KEY) + list(ORDER_COLUMNS)
+    current = (spark.read.format("delta").load(silver_path).select(*ranked)
+               .join(arrivals.select(*dedup.KEY), list(dedup.KEY), "left_semi")
+               .withColumn("_arrival", F.lit(False)))
+    contenders = arrivals.select(*ranked).withColumn("_arrival", F.lit(True))
+    won = (deduplicate(contenders.unionByName(current))
+           .filter(F.col("_arrival")).select(*dedup.KEY))
+    changes = (arrivals.join(won, list(dedup.KEY), "left_semi")
+               .select(*schema.column_names()).localCheckpoint())
     return changes, quarantine(rejected, built_at=built_at)
+
+
+ORDER_COLUMNS = ("mbid_source", "artist_mbids", "_source_dump", "_record_id")
 
 
 MERGE_METRICS = (

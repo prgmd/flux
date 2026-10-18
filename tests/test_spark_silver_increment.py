@@ -269,3 +269,20 @@ def test_Silver를_통째로_다시_쓰면_증분을_막는다(spark, tables, wa
 
     with pytest.raises(fact_listens.FullRebuildNeeded):
         fact_listens.increment(spark, silver, fact_path, dim, built_at=LATER)
+
+
+@pytest.mark.parametrize("has_prior", [False, True])
+def test_새_덤프_안의_같은_청취는_승자_한_행만_반환한다(spark, warehouse, has_prior):
+    bronze, silver = warehouse("duplicates-bronze"), warehouse("duplicates-silver")
+    prior = _listen("alice", 1700000000, "same") if has_prior else _listen("bob", 1700000010, "other")
+    rows = [
+        _row(prior, dump="dump-a", record_id=1),
+        _row(_listen("alice", 1700000000, "same", "LASTFM"), dump="dump-b", record_id=11),
+        _row(_listen("alice", 1700000000, "same", "LASTFM"), dump="dump-b", record_id=11),
+        _row(_listen("alice", 1700000000, "same"), dump="dump-b", record_id=12),
+    ]
+    spark.createDataFrame(rows, BRONZE_SCHEMA).write.format("delta").save(bronze)
+    base, _ = build.build(spark, bronze, built_at=BUILT_AT, without=["dump-b"])
+    build.write(base, silver, partition=schema.PARTITION_COLUMN)
+    changes, _ = build.increment(spark, bronze, silver, dump="dump-b", built_at=LATER)
+    assert [row._record_id for row in changes.select("_record_id").collect()] == [11]
