@@ -76,3 +76,23 @@ def warehouse(tmp_path):
         return f"file:///{raw.lstrip('/')}"
 
     return path
+
+
+@pytest.fixture
+def playback_cases():
+    short = "재생 시간이 30초 미만"
+    return [
+        ("negative", -1, short), ("zero", 0, short),
+        ("old-boundary", 10000, short), ("below", 29999, short),
+        ("exact", 30000, None), ("above", 30001, None),
+        ("decimal-below", 29999.5, short), ("decimal-exact", 30000.0, None),
+        ("string-below", "29999", short), ("string-exact", "30000", None),
+        ("negative-string", "-1", short), ("whitespace", " 29999 ", short),
+        ("scientific-below", "2.9999e4", short), ("scientific-exact", "3e4", None),
+        ("missing", None, None), ("empty", "", None),
+        ("blank", "  ", None), ("text", "unknown", None),
+        ("units", "30000ms", None), ("underscore", "1_000", None),
+        ("float-suffix", "1f", None), ("unicode-digits", "１２３", None),
+        ("true", True, None), ("false", False, None),
+        ("object", {"value": 1}, None), ("array", [1], None),
+    ]

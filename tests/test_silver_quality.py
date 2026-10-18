@@ -241,3 +241,14 @@ def test_시각_견본은_원본이_쓰는_키를_고친다():
     samples = {s.reason: s for s in quality.spoiled(doc(), ingested_at=INGESTED)}
     early = samples[Reason.LISTENED_AT_BEFORE_1970].document
     assert "listened_at" not in early and early["timestamp"] < 0
+
+
+def test_재생_시간의_공통_입력_정책(playback_cases):
+    mismatches = []
+    for label, played, expected in playback_cases:
+        document = doc()
+        document["track_metadata"]["additional_info"]["ms_played"] = played
+        actual = judge(document)
+        if actual != quality.Verdict(expected is None, expected):
+            mismatches.append((label, actual, expected))
+    assert mismatches == []

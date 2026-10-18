@@ -62,7 +62,7 @@ def with_quality(bronze: DataFrame) -> DataFrame:
     quality.judge와 같은 순서로 본다. 먼저 걸리는 사유 하나만 남겨야
     사유별 합계가 행 수와 맞는다.
     """
-    from flux.silver.quality import Reason, MIN_MS_PLAYED
+    from flux.silver.quality import Reason, MIN_MS_PLAYED, PLAYED_NUMBER_PATTERN
 
     # **없는 것과 객체가 아닌 것을 같이 본다.**
     #
@@ -80,7 +80,8 @@ def with_quality(bronze: DataFrame) -> DataFrame:
     listened = F.col("listened_at")
     ingested = F.unix_timestamp(F.col("_ingested_at"))
     user_name = F.trim(F.coalesce(F.col("user_name"), F.lit("")))
-    ms_played = _json("$.track_metadata.additional_info.ms_played").try_cast("double")
+    raw_played = _json("$.track_metadata.additional_info.ms_played")
+    ms_played = F.when(raw_played.rlike(PLAYED_NUMBER_PATTERN), raw_played.try_cast("double"))
 
     return bronze.withColumn(
         "_reason",

@@ -14,9 +14,11 @@ pyspark를 부르지 않는다. "이 레코드가 성한가"는 Spark가 필요 
 """
 
 from dataclasses import dataclass
+import re
 
 EPOCH_1970 = 0
 MIN_MS_PLAYED = 30_000
+PLAYED_NUMBER_PATTERN = r"^[ \t\r\n\f\v]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\r\n\f\v]*$"
 
 
 class Reason:
@@ -112,6 +114,8 @@ def judge(document, *, ingested_at) -> Verdict:
     additional = document["track_metadata"].get("additional_info")
     if isinstance(additional, dict):
         played = additional.get("ms_played")
+        if isinstance(played, str) and re.fullmatch(PLAYED_NUMBER_PATTERN, played) is None:
+            return PASS
         if isinstance(played, (int, float, str)) and not isinstance(played, bool):
             try:
                 if float(played) < MIN_MS_PLAYED:

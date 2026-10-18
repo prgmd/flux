@@ -371,3 +371,23 @@ def test_시간대가_다르면_같은_청취가_다른_달이_된다(spark):
         assert frame.select(build.listened_month(F.col("t"))).first()[0] == "2026-10"
     finally:
         spark.conf.set("spark.sql.session.timeZone", before)
+
+
+def test_재생_시간의_모든_유형에서_파이썬과_같이_판정한다(spark, playback_cases):
+    documents = []
+    for label, played, expected in playback_cases:
+        document = _listen()
+        document["track_metadata"]["additional_info"] = {"ms_played": played}
+        documents.append(document)
+    bronze = spark.createDataFrame([
+        _bronze_row(document, record_id=i)
+        for i, document in enumerate(documents)
+    ], BRONZE_SCHEMA)
+    actual = {row._record_id: row._reason for row in
+              build.with_quality(bronze).select("_record_id", "_reason").collect()}
+    mismatches = []
+    for i, ((label, _, expected), document) in enumerate(zip(playback_cases, documents)):
+        verdict = quality.judge(document, ingested_at=INGESTED_EPOCH)
+        if actual[i] != expected or verdict != quality.Verdict(expected is None, expected):
+            mismatches.append((label, actual[i], verdict, expected))
+    assert mismatches == []
