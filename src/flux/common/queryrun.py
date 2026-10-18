@@ -20,6 +20,7 @@ TABLES = {
     "fact": (config.GOLD, fact.TABLE_NAME),
     "dim_artist": (config.GOLD, scd2.TABLE_NAME),
     "mart_daily": (config.GOLD, mart.DAILY_ARTIST),
+    "mart_period": (config.GOLD, mart.PERIOD_ARTIST),
 }
 
 ALLOWED_FIRST_WORDS = frozenset({"SELECT", "WITH", "FROM", "DESCRIBE", "SHOW", "EXPLAIN", "SUMMARIZE"})

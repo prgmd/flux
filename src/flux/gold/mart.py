@@ -12,6 +12,8 @@ flux.gold.fact와 flux.gold.fact_listens, flux.gold.scd2와 flux.gold.dim_artist
 
 DAILY_ARTIST = "mart_daily_artist"
 
+PERIOD_ARTIST = "mart_period_artist"
+
 RISING_ARTIST = "mart_rising_artist"
 
 RISING_TOP = 20

@@ -144,6 +144,7 @@ python scripts/pipeline/gold_dim_artist.py --at <YYYY-MM-DD>
 python scripts/pipeline/gold_fact_listens.py       # 전체를 다시 만든다
 python scripts/pipeline/gold_fact_increment.py     # Silver가 바뀐 만큼만 따라간다
 python scripts/pipeline/gold_mart.py
+python scripts/pipeline/gold_mart_periods.py
 
 # 점검 (전부 임시 사본에서, 운영 표는 읽기만)
 python scripts/drills/gold_rename_drill.py          # 개명을 주입해 이력 두 줄이 생기는지
