@@ -16,6 +16,7 @@ TABLES = {
     "bronze_invalid": (config.BRONZE, bronze_schema.QUARANTINE_TABLE_NAME),
     "silver": (config.SILVER, silver_schema.TABLE_NAME),
     "silver_invalid": (config.SILVER, silver_schema.QUARANTINE_TABLE_NAME),
+    "user_recording_counts": (config.SILVER, "user_recording_counts"),
     "fact": (config.GOLD, fact.TABLE_NAME),
     "dim_artist": (config.GOLD, scd2.TABLE_NAME),
     "mart_daily": (config.GOLD, mart.DAILY_ARTIST),

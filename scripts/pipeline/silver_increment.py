@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from flux.bronze import schema as bronze_schema
 from flux.common import config, job_runs
 from flux.common.spark import session as spark_session
-from flux.silver import build, schema
+from flux.silver import build, schema, user_recording_counts
 
 
 def main() -> int:
@@ -42,6 +42,8 @@ def main() -> int:
                                             dump=args.dump, built_at=built_at)
         metrics = build.merge(spark, changes, silver_path)
         build.replace_quarantine(rejected, quarantine_path, dump=args.dump)
+        user_recording_counts.refresh(
+            spark, silver_path, config.silver(user_recording_counts.TABLE_NAME))
         elapsed = time.time() - started
 
         print(f"덤프       : {args.dump}")

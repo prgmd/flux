@@ -126,7 +126,7 @@ def test_격리_사유가_서로_다르다():
     """사유가 겹치면 분포를 세는 의미가 없다."""
     reasons = [v for k, v in vars(Reason).items() if not k.startswith("_")]
     assert len(reasons) == len(set(reasons))
-    assert len(reasons) == 5
+    assert len(reasons) == 6
 
 
 def test_중복_제거_키가_스키마_컬럼이거나_해석된_값이다():

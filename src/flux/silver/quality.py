@@ -16,6 +16,7 @@ pyspark를 부르지 않는다. "이 레코드가 성한가"는 Spark가 필요 
 from dataclasses import dataclass
 
 EPOCH_1970 = 0
+MIN_MS_PLAYED = 10_000
 
 
 class Reason:
@@ -26,6 +27,7 @@ class Reason:
     LISTENED_AT_FUTURE = "청취 시각이 적재 시각보다 미래"
     USER_NAME_MISSING = "사용자 이름 없음"
     METADATA_MISSING = "track_metadata 없음"
+    PLAYED_TOO_SHORT = "재생 시간이 10초 미만"
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,16 @@ def judge(document, *, ingested_at) -> Verdict:
 
     if not isinstance(document.get("track_metadata"), dict):
         return Verdict(False, Reason.METADATA_MISSING)
+
+    additional = document["track_metadata"].get("additional_info")
+    if isinstance(additional, dict):
+        played = additional.get("ms_played")
+        if isinstance(played, (int, float, str)) and not isinstance(played, bool):
+            try:
+                if float(played) < MIN_MS_PLAYED:
+                    return Verdict(False, Reason.PLAYED_TOO_SHORT)
+            except (ValueError, OverflowError):
+                pass
 
     return PASS
 

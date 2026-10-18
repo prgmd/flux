@@ -16,7 +16,7 @@ from pyspark.sql import functions as F
 from flux.bronze import schema as bronze_schema
 from flux.common import config, job_runs
 from flux.common.spark import session as spark_session
-from flux.silver import build, schema
+from flux.silver import build, schema, user_recording_counts
 
 
 def main() -> int:
@@ -39,6 +39,8 @@ def main() -> int:
         build.enable_change_feed(spark, silver_path)
         build.write(rejected, quarantine_path,
                     partition=schema.QUARANTINE_PARTITION_COLUMN)
+        user_recording_counts.refresh(
+            spark, silver_path, config.silver(user_recording_counts.TABLE_NAME))
         elapsed = time.time() - started
 
         bronze_rows = spark.read.format("delta").load(bronze_path).count()

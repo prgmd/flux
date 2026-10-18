@@ -180,6 +180,12 @@ def test_앞의_이름이_못_쓸_값이면_뒤를_본다():
     document["listened_at"] = "깨짐"
     assert quality.listened_at_of(document) == LISTENED
 
+def test_재생_시간이_10초_미만이면_격리한다():
+    document = doc()
+    document["track_metadata"]["additional_info"]["ms_played"] = 9999
+    verdict = judge(document)
+    assert verdict.ok is False
+    assert verdict.reason == "재생 시간이 10초 미만"
 
 # ── 격리 드릴의 불량 견본 ───────────────────────────────────
 

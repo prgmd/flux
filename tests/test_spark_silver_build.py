@@ -132,8 +132,63 @@ def test_격리와_통과의_합이_입력과_같다(spark):
     assert passed + rejected == len(documents)
     assert passed == 1
 
+@pytest.mark.parametrize(
+    "played, expected_reason",
+    [
+        (9999, quality.Reason.PLAYED_TOO_SHORT),
+        (10000, None),
+        (None, None),
+    ],
+)
+def test_재생_시간에_따라_격리한다(spark, played, expected_reason):
+    document = _listen()
+    document["track_metadata"]["additional_info"] = {}
+
+    if played is not None:
+        document["track_metadata"]["additional_info"]["ms_played"] = played
+
+    bronze = spark.createDataFrame(
+        [_bronze_row(document)],
+        BRONZE_SCHEMA,
+    )
+
+    row = build.with_quality(bronze).select("_reason").first()
+
+    assert row["_reason"] == expected_reason
+
 
 # ── MBID 해석 ───────────────────────────────────────────────
+
+
+def test_사용자별_곡_집계_전에_중복과_짧은_재생을_제외한다(spark, warehouse):
+    from flux.silver import user_recording_counts
+
+    documents = []
+    for timestamp, played, mbid in [
+        (1700000000, 10000, MBID_A),
+        (1700000000, 10000, MBID_A),
+        (1700000300, None, MBID_A),
+        (1700000600, 9999, MBID_A),
+        (1700000900, 10000, None),
+    ]:
+        info = {"recording_mbid": mbid}
+        if played is not None:
+            info["ms_played"] = played
+        documents.append(_listen(
+            user_id=1, listened_at=timestamp,
+            track_metadata={"additional_info": info}))
+    bronze = spark.createDataFrame([
+        _bronze_row(doc, record_id=i, dump=f"dump-{i}")
+        for i, doc in enumerate(documents)
+    ], BRONZE_SCHEMA)
+    path = warehouse("bronze-counts")
+    bronze.write.format("delta").save(path)
+    silver, rejected = build.build(spark, path, built_at=BUILT_AT)
+    rows = user_recording_counts.aggregate(silver).collect()
+    assert len(rows) == 1
+    assert (rows[0].user_id, rows[0].recording_mbid, rows[0].play_count) == (
+        "1", MBID_A, 2)
+    assert rejected.select("reason").first()["reason"] == quality.Reason.PLAYED_TOO_SHORT
 
 def test_출처_우선순위가_mbid_resolve와_같다(spark):
     """recording MBID를 고른 자리에서 아티스트도 함께 가져와야 한다.

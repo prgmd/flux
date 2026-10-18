@@ -32,7 +32,7 @@ PROVENANCE = (
     ), "위에서부터 처음 있는 UUID"),
 )
 
-QUALITY_PATHS = ("$.track_metadata",)
+QUALITY_PATHS = ("$.track_metadata", "$.track_metadata.additional_info.ms_played")
 
 UNCHECKED_AGAINST_BUILD = frozenset({"user_name"})
 
