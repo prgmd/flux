@@ -5,7 +5,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 TABLE_NAME = "user_recording_counts"
-KEY = ("user_id", "recording_mbid")
+KEY = ("user_id", "recording_msid")
 METADATA_KEY = "spark.databricks.delta.commitInfo.userMetadata"
 
 
@@ -19,7 +19,7 @@ def _state(spark: SparkSession, path: str) -> dict | None:
     raw = DeltaTable.forPath(spark, path).history(1).first()["userMetadata"]
     try:
         state = json.loads(raw)[TABLE_NAME]
-        if (isinstance(state["source_id"], str)
+        if (state["key"] == list(KEY) and isinstance(state["source_id"], str)
                 and type(state["version"]) is int and state["version"] >= 0):
             return state
     except (ValueError, TypeError, KeyError):
@@ -46,8 +46,7 @@ def _commit_metadata(spark, text):
 
 
 def aggregate(listens: DataFrame) -> DataFrame:
-    return (listens.filter(F.col("recording_mbid").isNotNull())
-            .groupBy(*KEY).agg(F.count(F.lit(1)).alias("play_count")))
+    return listens.groupBy(*KEY).agg(F.count(F.lit(1)).alias("play_count"))
 
 
 def apply_changes(spark: SparkSession, deltas: DataFrame, target_path: str,
@@ -70,11 +69,11 @@ def apply_changes(spark: SparkSession, deltas: DataFrame, target_path: str,
             raise FullRebuildNeeded("집계 횟수가 음수가 된다. --rebuild로 대조해야 한다")
 
         (target.alias("t").merge(deltas.alias("s"),
-                                 "t.user_id = s.user_id AND t.recording_mbid = s.recording_mbid")
+                                 " AND ".join(f"t.{key} = s.{key}" for key in KEY))
          .whenMatchedDelete("t.play_count + s.delta = 0")
          .whenMatchedUpdate(set={"play_count": "t.play_count + s.delta"})
          .whenNotMatchedInsert(condition="s.delta > 0", values={
-             "user_id": "s.user_id", "recording_mbid": "s.recording_mbid",
+             **{key: f"s.{key}" for key in KEY},
              "play_count": "s.delta"})
          .execute())
 
@@ -89,7 +88,7 @@ def refresh(spark: SparkSession, silver_path: str, target_path: str,
     source = DeltaTable.forPath(spark, silver_path)
     detail = source.detail().first()
     version = source.history(1).first()["version"]
-    state = {"source_id": detail["id"], "version": version}
+    state = {"source_id": detail["id"], "version": version, "key": list(KEY)}
     if detail["properties"].get("delta.enableChangeDataFeed") != "true":
         raise FullRebuildNeeded("상세 Silver의 CDF를 켠 뒤 --rebuild로 초기화해야 한다")
 
@@ -104,7 +103,7 @@ def refresh(spark: SparkSession, silver_path: str, target_path: str,
     done = _state(spark, target_path)
     if (done is None or done["source_id"] != state["source_id"]
             or done["version"] > version):
-        raise FullRebuildNeeded("처리 위치가 없거나 원본이 바뀌었다. --rebuild가 필요하다")
+        raise FullRebuildNeeded("집계 키나 처리 위치가 다르거나 원본이 바뀌었다. --rebuild가 필요하다")
     if done["version"] == version:
         return version
 
@@ -113,8 +112,7 @@ def refresh(spark: SparkSession, silver_path: str, target_path: str,
                 .option("startingVersion", done["version"] + 1)
                 .option("endingVersion", version).load(silver_path))
         kind = F.col("_change_type")
-        deltas = (feed.filter(F.col("recording_mbid").isNotNull())
-                  .withColumn("delta", F.when(kind.isin("insert", "update_postimage"), 1)
+        deltas = (feed.withColumn("delta", F.when(kind.isin("insert", "update_postimage"), 1)
                               .otherwise(-1))
                   .groupBy(*KEY).agg(F.sum("delta").alias("delta"))
                   .filter(F.col("delta") != 0).localCheckpoint())

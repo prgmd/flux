@@ -186,8 +186,8 @@ def test_사용자별_곡_집계_전에_중복과_짧은_재생을_제외한다(
     silver, rejected = build.build(spark, path, built_at=BUILT_AT)
     rows = user_recording_counts.aggregate(silver).collect()
     assert len(rows) == 1
-    assert (rows[0].user_id, rows[0].recording_mbid, rows[0].play_count) == (
-        "1", MBID_A, 2)
+    assert (rows[0].user_id, rows[0].recording_msid, rows[0].play_count) == (
+        "1", "msid-1", 3)
     assert rejected.select("reason").first()["reason"] == quality.Reason.PLAYED_TOO_SHORT
 
 def test_출처_우선순위가_mbid_resolve와_같다(spark):

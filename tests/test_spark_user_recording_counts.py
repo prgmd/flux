@@ -13,27 +13,30 @@ B = "8538e728-ca0b-4321-b7e5-cff6565dd4c0"
 
 
 def values(df):
-    return {(r.user_id, r.recording_mbid): r.play_count for r in df.collect()}
+    return {(r.user_id, r.recording_msid): r.play_count for r in df.collect()}
 
 
-def test_사용자와_녹음으로_묶고_MSID가_달라도_횟수를_합친다(spark):
+def test_사용자와_MSID로_묶고_MBID와_무관하게_전부_포함한다(spark):
     source = spark.createDataFrame([
-        ("1", A, "msid-a"), ("1", A, "msid-b"),
-        ("2", A, "msid-a"), ("1", B, "msid-c"),
+        ("1", A, "a"), ("1", None, "a"), ("1", B, "a"),
+        ("1", A, "b"), ("2", A, "a"),
         ("1", None, "unknown-a"), ("1", None, "unknown-b"),
     ], INPUT_SCHEMA)
     result = counts.aggregate(source)
-    assert values(result) == {("1", A): 2, ("2", A): 1, ("1", B): 1}
-    assert result.columns == ["user_id", "recording_mbid", "play_count"]
+    assert values(result) == {
+        ("1", "a"): 3, ("1", "b"): 1, ("2", "a"): 1,
+        ("1", "unknown-a"): 1, ("1", "unknown-b"): 1}
+    assert result.columns == ["user_id", "recording_msid", "play_count"]
     assert result.schema["play_count"].dataType.simpleString() == "bigint"
 
 
-def test_MBid가_없으면_빈_집계가_된다(spark):
-    source = spark.createDataFrame([("1", None, "unknown")], INPUT_SCHEMA)
-    assert counts.aggregate(source).count() == 0
+def test_MBID_컬럼이_없어도_전체_청취를_센다(spark):
+    source = spark.createDataFrame([("1", "a"), ("1", "a"), ("1", "b")],
+                                   "user_id string, recording_msid string")
+    assert values(counts.aggregate(source)) == {("1", "a"): 2, ("1", "b"): 1}
 
 
-def test_새_청취와_재실행과_곡_수정을_정확히_반영한다(spark, warehouse):
+def test_새_청취와_재실행과_MSID_수정을_정확히_반영한다(spark, warehouse):
     source_path = warehouse("silver")
     target_path = warehouse("counts")
 
@@ -48,17 +51,17 @@ def test_새_청취와_재실행과_곡_수정을_정확히_반영한다(spark, 
     write([("1", A, "a"), ("1", None, "unknown")])
     version = counts.refresh(spark, source_path, target_path)
     assert version == 0
-    assert read() == {("1", A): 1}
+    assert read() == {("1", "a"): 1, ("1", "unknown"): 1}
     counts.refresh(spark, source_path, target_path)
-    assert read() == {("1", A): 1}
+    assert read() == {("1", "a"): 1, ("1", "unknown"): 1}
 
-    write([("1", A, "a"), ("1", A, "b"), ("2", B, "c")])
+    write([("1", A, "a"), ("1", None, "a"), ("2", B, "c")])
     counts.refresh(spark, source_path, target_path)
-    assert read() == {("1", A): 2, ("2", B): 1}
+    assert read() == {("1", "a"): 2, ("2", "c"): 1}
 
-    write([("1", B, "a"), ("1", None, "b")])
+    write([("1", B, "b"), ("1", None, "a")])
     counts.refresh(spark, source_path, target_path)
-    assert read() == {("1", B): 1}
+    assert read() == {("1", "a"): 1, ("1", "b"): 1}
     assert spark.read.format("delta").load(source_path).count() == 2
 
 
@@ -82,22 +85,23 @@ def test_초기화_뒤에는_전체_집계_없이_증분과_빈_변경을_처리
         raise AssertionError("증분 실행에서 전체 집계를 호출했다")
 
     monkeypatch.setattr(counts, "aggregate", forbid_full_scan)
-    (spark.createDataFrame([("1", A, "b"), ("2", B, "c")], INPUT_SCHEMA)
+    (spark.createDataFrame([("1", None, "a"), ("2", B, "c")], INPUT_SCHEMA)
      .write.format("delta").mode("append").save(source))
     version = counts.refresh(spark, source, target)
-    assert values(spark.read.format("delta").load(target)) == {("1", A): 2, ("2", B): 1}
+    assert values(spark.read.format("delta").load(target)) == {("1", "a"): 2, ("2", "c"): 1}
     counts.refresh(spark, source, target)
-    assert values(spark.read.format("delta").load(target)) == {("1", A): 2, ("2", B): 1}
+    assert values(spark.read.format("delta").load(target)) == {("1", "a"): 2, ("2", "c"): 1}
 
     table = DeltaTable.forPath(spark, source)
     table.update("recording_msid = 'a'", {"recording_mbid": f"'{B}'"})
     counts.refresh(spark, source, target)
     assert values(spark.read.format("delta").load(target)) == {
-        ("1", A): 1, ("1", B): 1, ("2", B): 1}
+        ("1", "a"): 2, ("2", "c"): 1}
+    assert counts.processed_version(spark, target) == counts.refresh(spark, source, target)
     table.delete("user_id = '2'")
-    table.update("recording_msid = 'b'", {"recording_mbid": "NULL"})
+    table.update("recording_msid = 'a'", {"recording_msid": "'b'", "recording_mbid": "NULL"})
     counts.refresh(spark, source, target)
-    assert values(spark.read.format("delta").load(target)) == {("1", B): 1}
+    assert values(spark.read.format("delta").load(target)) == {("1", "b"): 2}
 
     (spark.createDataFrame([("3", None, "unknown")], INPUT_SCHEMA)
      .write.format("delta").mode("append").save(source))
@@ -105,7 +109,7 @@ def test_초기화_뒤에는_전체_집계_없이_증분과_빈_변경을_처리
     assert latest > version
     assert counts.processed_version(spark, target) == latest
     counts.refresh(spark, source, target)
-    assert values(spark.read.format("delta").load(target)) == {("1", B): 1}
+    assert values(spark.read.format("delta").load(target)) == {("1", "b"): 2, ("3", "unknown"): 1}
 
 
 def test_커밋_직후_실패해도_재시도에서_두번_더하지_않는다(
@@ -115,7 +119,7 @@ def test_커밋_직후_실패해도_재시도에서_두번_더하지_않는다(
     (spark.createDataFrame([("1", A, "a")], INPUT_SCHEMA).write.format("delta")
      .option("delta.enableChangeDataFeed", "true").save(source))
     counts.refresh(spark, source, target)
-    (spark.createDataFrame([("1", A, "b")], INPUT_SCHEMA)
+    (spark.createDataFrame([("1", None, "a")], INPUT_SCHEMA)
      .write.format("delta").mode("append").save(source))
     apply = counts.apply_changes
 
@@ -127,22 +131,27 @@ def test_커밋_직후_실패해도_재시도에서_두번_더하지_않는다(
     with pytest.raises(RuntimeError, match="커밋 직후"):
         counts.refresh(spark, source, target)
     counts.refresh(spark, source, target)
-    assert values(spark.read.format("delta").load(target)) == {("1", A): 2}
+    assert values(spark.read.format("delta").load(target)) == {("1", "a"): 2}
 
 
 def test_다른_원본이나_처리위치_없는_기존_집계는_명시적_재생성이_필요하다(
         spark, warehouse):
+    import json
+    from delta.tables import DeltaTable
+
     source = warehouse("source-a")
     other = warehouse("source-b")
     target = warehouse("existing-counts")
     for path in (source, other):
         (spark.createDataFrame([("1", A, "a")], INPUT_SCHEMA).write.format("delta")
          .option("delta.enableChangeDataFeed", "true").save(path))
+    source_id = DeltaTable.forPath(spark, source).detail().first()["id"]
+    legacy_state = json.dumps({counts.TABLE_NAME: {"source_id": source_id, "version": 0}})
     (spark.createDataFrame([("1", A, 10)], "user_id string, recording_mbid string, play_count long")
-     .write.format("delta").save(target))
+     .write.format("delta").option("userMetadata", legacy_state).save(target))
     with pytest.raises(counts.FullRebuildNeeded):
         counts.refresh(spark, source, target)
     counts.refresh(spark, source, target, rebuild=True)
-    assert values(spark.read.format("delta").load(target)) == {("1", A): 1}
+    assert values(spark.read.format("delta").load(target)) == {("1", "a"): 1}
     with pytest.raises(counts.FullRebuildNeeded):
         counts.refresh(spark, other, target)
