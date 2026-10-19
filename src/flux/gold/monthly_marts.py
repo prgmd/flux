@@ -18,6 +18,8 @@ def literal(value):
 
 
 def build_dimension(c):
+    separate = 'artist_status' in [row[0] for row in c.execute('describe reviewed').fetchall()]
+    credit_condition = "r.artist_status='accepted'" if separate else "d.status='matched_candidate'"
     terms = ','.join(f"case when regexp_matches(labels,{literal(pattern)}) then '{name}' end"
                      for name, pattern in VARIANTS.items())
     c.execute(f"""create or replace table song_dimension as
@@ -37,9 +39,10 @@ def build_dimension(c):
         case when count(distinct variant)=1 then min(variant) else 'conflicting_labels' end variant,
         min(status) identity_status,count(*) source_msids
         from song_dimension group by song_key""")
-    c.execute("""create or replace table song_credits as select d.song_key,p.artist_mbid,
+    c.execute(f"""create or replace table song_credits as select d.song_key,p.artist_mbid,
         min(p.artist_name) artist_name from song_dimension d join proposed_credits p using(recording_msid)
-        where d.status='matched_candidate' group by d.song_key,p.artist_mbid""")
+        join reviewed r using(recording_msid)
+        where {credit_condition} group by d.song_key,p.artist_mbid""")
 
 
 def metrics(c, name, source, keys):

@@ -100,6 +100,28 @@ def test_snapshot_driver_exports_and_rejects_stale_audit(tmp_path):
     assert result['completed'] and result['listens']==18
     assert len(list((tmp_path/'out/month').glob('*.parquet')))==7
     assert len(list((tmp_path/'out/year').glob('*.parquet')))==7
+    refresh_spec=importlib.util.spec_from_file_location('gold_refresh',Path(__file__).resolve().parents[1]/'scripts/refresh_gold_attribution.py')
+    refresh=importlib.util.module_from_spec(refresh_spec)
+    refresh_spec.loader.exec_module(refresh)
+    new_audit=tmp_path/'new_audit';new_audit.mkdir()
+    with duckdb.connect() as c:
+        fixture(c)
+        c.execute("alter table reviewed add column artist_status varchar default 'accepted'")
+        c.execute("insert into proposed_credits values ('fast','a','Main')")
+        for name in ('reviewed','proposed_credits'):
+            c.execute(f"copy {name} to '{(new_audit/(name+'.parquet')).as_posix()}' (format parquet)")
+    (new_audit/'result.json').write_text(json.dumps({'completed':True,'source_unchanged':True,
+        'source_after':driver.fingerprint(silver),'policy':'separate-artist-v1','credit_policy':'test'}))
+    refresh.run(silver,new_audit,tmp_path/'out',tmp_path/'refreshed')
+    driver.run(silver,new_audit,tmp_path/'rebuilt')
+    with duckdb.connect() as c:
+        for period in ('month','year'):
+            for path in (tmp_path/'rebuilt'/period).glob('*.parquet'):
+                a=path.as_posix();b=(tmp_path/'refreshed'/period/path.name).as_posix()
+                assert c.execute(f"select count(*) from ((select * from read_parquet('{a}') except select * from read_parquet('{b}')) union all (select * from read_parquet('{b}') except select * from read_parquet('{a}')))").fetchone()[0]==0
+    assert (tmp_path/'out/month/variant_metrics.parquet').read_bytes()==(tmp_path/'refreshed/month/variant_metrics.parquet').read_bytes()
+    with pytest.raises(FileExistsError):
+        refresh.run(silver,new_audit,tmp_path/'out',tmp_path/'refreshed')
     with duckdb.connect() as c:
         assert c.execute(f"select typeof(listens) from read_parquet('{(tmp_path/'out/month/song_metrics.parquet').as_posix()}') limit 1").fetchone()[0]=='BIGINT'
     finalize_spec=importlib.util.spec_from_file_location('gold_finalize',Path(__file__).resolve().parents[1]/'scripts/finalize_monthly_gold.py')

@@ -83,7 +83,7 @@ def run(silver, audit, output):
             'format':'parquet snapshots and DuckDB','periods':['month','year'],'timezone':'UTC',
             'identity_policy':'matched official MBID only; unresolved MSIDs retained separately',
             'variant_policy':'variant-label-v1; modified versions never stripped to base title',
-            'credit_policy':'official matched candidates only, full credit to each participant',
+            'credit_policy':info.get('credit_policy','official matched candidates only, full credit to each participant'),
             'rank_policy':'rank by listeners only; display name then stable key',
             'event_deduplication':'no cross-MSID event subtraction', 'production_promoted':False}
     (output/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
