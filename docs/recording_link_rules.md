@@ -84,3 +84,12 @@ venv/Scripts/python scripts/investigations/catalog_title_variants.py --source <�
 
 `result.json`의 completed와 source_unchanged를 확인한다. 목록의 모든 행을 사람이 검수한 것은 아니다. 우선 검수한 두 앨범 사례와 유형별 대표 사례를 바탕으로 검수 상태를 쌓아 갈 준비가 된 상태다. 앨범명 전체의 변형 목록은 월별 사전에 앨범명이 없으므로 이번 제목 스캔 범위에 포함되지 않는다.
 `tests/test_title_variant_catalog.py`와 기존 조사 테스트 합계 8개가 통과했다. 내보낸 다섯 Parquet의 행 수를 결과 파일과 대조했고, 두 후보 경로 모두 구성원에서 다시 센 제목 수가 후보 표와 전수 일치했다. 이 검사는 사례집의 계산 및 저장 무결성을 확인하며 실제 곡 연결의 정확성을 대신하지 않는다.
+
+
+## R8 공식 MBID 안의 문자 차이 정리
+
+승인한 규칙 버전은 `official-credit-typography-v1`이다. 공식 recording MBID가 실제 덤프에서 조회된 경우에 한해, 비교용 제목과 아티스트에서 U+2018/U+2019 따옴표를 ASCII 작은따옴표로, U+2010/U+2011 하이픈을 ASCII 하이픈으로 정리한다. 대소문자와 앞뒤 공백 처리는 기존과 같다. 원문, MSID와 MBID는 바꾸지 않는다.
+
+이 규칙은 다른 MBID의 이름을 비교해 합치는 규칙이 아니다. MBID 충돌, 미수록, 버전 설명과 비디오는 기존 검토 조건을 유지한다. 괄호와 clean, explicit, sped up 표기를 지우지 않는다. 공식 이름과 비교가 통과해도 음원 동일성을 완전히 입증하는 것은 아니므로 제안 크레딧과 최종 적용 상태를 구분한다. 동명이인, 번역 제목, 관사와 별칭은 이 규칙 범위 밖이다.
+
+`tests/test_official_credit_audit.py`에서 문자 차이 통과와 미수록 ID 보류, 속도 변경 제목 보류, censored 및 live 설명 유지와 원문 보존을 확인한다. 첫 실패 후 구현했으며 전체 조사용 테스트 5개가 통과했다. 전수 적용 영향은 [전체 점검 결과](review_20261019.md)에 기록한다.
