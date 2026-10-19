@@ -2,17 +2,17 @@
 
 # Flux
 
-**1.5억 건의 음악 청취 로그를 정제하고, 아티스트의 일별 청취와 주간 급상승을 분석하는 배치 데이터 파이프라인.**
+**1.6억 건의 음악 청취 로그를 정제하고, 사용자별 월간 청취 횟수와 아티스트 지표를 만드는 배치 데이터 파이프라인.**
 
 ListenBrainz의 실제 청취 기록과 MusicBrainz의 아티스트 메타데이터를 Spark로 처리합니다. Delta Lake에 원본과 정제 결과를 보존하고, 아티스트 개명 이력까지 반영한 분석 마트를 만듭니다.
 
 | 처리 규모 | 데이터 모델 | 실행 환경 | 현재 범위 |
 |---|---|---|---|
-| Bronze **155,713,649행** | Delta Lake, SCD Type 2 | 로컬 / Spark standalone 워커 3개 | 배치 적재부터 분석 마트까지 |
+| 통합 Bronze **162,679,797행** | Delta Lake, SCD Type 2 | 로컬 / Spark standalone 실험 | 통합 입력은 Silver까지, 기존 입력은 Gold 검증까지 |
 
 [아키텍처](#architecture) / [진행 상황](#진행-상황) / [실측](#실측) / [검증](#검증) / [실행 안내](docs/running.md)
 
-> 기존 마트 설명은 2026-10-07 코드 기준이며, 아래 현황은 2026-10-18까지 반영했습니다. PostgreSQL 서빙 적재와 FastAPI, Airflow 통합은 후속 작업입니다.
+> 기존 마트 설명은 2026-10-07 코드 기준이며, 아래 현황은 2026-10-19까지 반영했습니다. PostgreSQL 서빙 적재와 FastAPI, Airflow 통합은 후속 작업입니다.
 
 현재 보완은 세 갈래입니다. Silver에서 확인된 재생 시간이 30초 미만인 기록을 격리하고, 반복 청취는 사용자와 MSID별 play_count로 보존합니다. Gold의 새 마트는 청취 수와 청취자 수를 함께 계산하고 청취자 수로 순위를 매깁니다. 같은 곡이 다른 MSID로 등록된 경우는 별도 후보 조사와 검토를 거쳐 연결합니다. [상세 정책과 검증 범위](docs/user_recording_counts.md)를 참고하세요.
 
@@ -21,6 +21,9 @@ ListenBrainz의 실제 청취 기록과 MusicBrainz의 아티스트 메타데이
 현 데이터의 [예비 순위 비교](docs/measurements/2026-10-18-artist-ranks.md)에서 RM은 청취 수 2위에서 청취자 수 1,082위로 달라졌습니다. 한 계정의 청취 비중은 58.19%였습니다. 아티스트를 연결할 수 있는 청취는 Silver의 39.68%이며, 이 표본의 계정 분포를 전체 인구의 인기도로 해석하지 않습니다.
 
 [일별과 주별 청취자 순위 마트](docs/artist_periods.md)를 추가했습니다. 청취 수와 고유 청취자 수, 한 계정의 최대 청취 수 및 비중과 기간별 커버리지를 함께 계산합니다. 30초 기준 Silver와 종속 집계, 새 Gold 마트를 별도 경로에서 전체 생성하고 독립 검증 10개 묶음을 통과했습니다. 운영 경로는 교체하지 않았습니다. [전체 재생성 결과](docs/rebuild_30seconds.md)에 수치와 검증 범위를 기록했습니다. 이후 추가 두 덤프까지 포함한 Bronze 162,679,797건에서 Silver 상세 157,351,363건과 사용자+MSID 집계 44,261,553행의 전수 검증을 완료했습니다. 추가분 포함 Gold는 아직 생성하지 않았으며 기존 Gold와 입력 범위를 구분합니다.
+
+
+월별 Silver도 별도 경로에서 생성하고 독립 전수 대조를 완료했습니다. 사용자 이름+MSID+UTC 청취 월 기준 **80,563,985행**에 총 **157,351,363회**를 보존합니다. 메타데이터 사전과 격리를 포함한 활성 파일은 **5.15GB**로 기존 상세+전체 기간 횟수+격리 15.54GB보다 **66.9% 감소**했습니다. 새 출력에는 개별 청취 상세를 추가 저장하지 않습니다. 전체 키 불일치 0건과 실제 동일 입력 재실행의 무변경을 확인했습니다. 기존 검증본은 보관하며 월별 Gold는 보류합니다. [실행 및 검증 결과](docs/rebuild_30seconds.md#월별-delta-실제-생성)를 참고하세요.
 
 ---
 
@@ -42,6 +45,8 @@ MetaBrainz의 ListenBrainz에서 발생한 음악 청취 로그를 수집, 가�
 
 **구현과 기동을 구분합니다.** Spark 배치 잡과 Delta 마트는 구현됐습니다. Docker Compose에 PostgreSQL과 Airflow 구성은 있지만, 서빙 적재와 조회 API는 아직 없고 Airflow DAG도 스모크 검증 단계입니다. 회색 영역은 이 후속 연결을 나타냅니다.
 
+새 Silver는 사용자 이름+MSID+UTC 청취 월별 횟수와 곡 메타데이터 사전, 격리 표를 별도 경로에 만듭니다. 아래 상세 기반 Silver와 Gold는 기존 구현 이력이며 월별 출력의 Gold는 아직 연결하지 않았습니다. [월별 규칙](docs/user_recording_counts.md#월별-silver-전환)과 [전용 실행 안내](docs/running.md#월별-silver-전용-경로)를 참고하세요.
+
 그림의 근거와 수정 방법은 [아키텍처 설명](docs/architecture.md)에 있습니다.
 
 Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azure/databricks/lakehouse/medallion)로 3단계 정제 레이어를 둡니다.
@@ -49,8 +54,10 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | 레이어 | 테이블 | 내용 |
 |---|---|---|
 | **Bronze** | `raw_listens` | 원본 JSON 보존. 덤프 단위 `replaceWhere`로 멱등 적재 |
-| **Silver** | `listens_normalized` | MBID 우선순위 해석, 클라이언트 식별, 중복 제거, 품질 격리 |
-| **Silver** | `user_recording_counts` | 사용자와 recording MSID별 청취 횟수, MBID 미보유 포함, CDF 증분 갱신. [집계 규칙](docs/user_recording_counts.md). 코드 구현, 운영 생성 전 |
+| **Silver (월별)** | `monthly_user_recordings` | 사용자 이름과 MSID 및 UTC 청취 월별 play_count. 개별 청취 상세를 추가 저장하지 않음 |
+| | `recording_metadata` | MSID별 관측 곡 메타데이터 변형의 고유 조합. 유일 대표값은 별도 판단 |
+| **Silver (기존 상세)** | `listens_normalized` | MBID 해석, 중복 제거와 품질 격리를 검증한 이전 상세 입력. 새 월별 출력에는 복제하지 않음 |
+| | `user_recording_counts` | 기존 사용자 ID+MSID 전체 기간 횟수. 월별 전환에서 대체하며 이전 검증본은 보존 |
 | | `invalid_listens` | 품질 규칙 위반 격리 테이블 |
 | **Gold** | `dim_artist` | 아티스트 차원. SCD Type 2로 개명 이력 보존 |
 | | `dim_date` | UTC 날짜와 ISO 주 기준을 공통으로 제공 |

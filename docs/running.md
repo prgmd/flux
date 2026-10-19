@@ -272,3 +272,29 @@ docker compose down -v                        # 볼륨까지
 
 `.env`에 Airflow 키들이 채워져 있어야 한다. `AIRFLOW_JWT_SECRET`이 컨테이너마다
 다르면 태스크가 `Invalid auth token: Signature verification failed`로 실패한다.
+
+## 월별 Silver 전용 경로
+
+새 월별 모델은 기존 일별 및 주별 Gold 잡과 분리해 실행한다. 기존 Gold를 새 월별 표에 연결하지 않는다. 원본을 덮어쓰거나 기존 상세를 지우는 명령도 포함하지 않는다.
+
+컨테이너에서 전수 검증 루트를 `/source`에 읽기 전용으로, 새 출력 폴더를 `/output`에 마운트한 뒤 실행한다.
+
+```bash
+python scripts/migrations/compact_monthly_silver.py --verified-root /source --output /output
+```
+
+호스트 가상환경에서 같은 출력을 독립 검증한다. 아래 경로는 각 환경의 실제 로컬 절대 경로로 바꾼다.
+
+```bash
+python scripts/migrations/verify_monthly_silver.py --verified-root <기존검증루트> --output <새월별Silver경로>
+```
+
+`migration.json`의 `completed`는 표 생성 완료다. `verification.json`의 `ok`가 참이고 `independent_validation_pending`이 거짓이어야 전수 대조까지 완료한 결과다. 생성은 같은 고정 입력에서 다시 실행하면 이미 커밋한 표를 건너뛴다.
+
+이후 증분용 진입점은 다음과 같다. 입력 Bronze에서 CDF를 새 덤프가 들어오기 전에 활성화하고 필요한 버전을 보존해야 한다. 현재 전환에 사용한 통합 Bronze v0에는 CDF가 없으며 이 도구는 원본 설정을 자동으로 바꾸지 않는다.
+
+```bash
+python scripts/pipeline/silver_monthly.py --bronze <Bronze경로> --output <월별Silver경로>
+```
+
+이 진입점의 출력 경로는 파일 시스템의 로컬 경로를 사용한다. 네트워크 저장소의 분산 잠금으로 확장한 도구가 아니다. 강제 종료 후 `.writer.lock`이 남으면 작성자가 종료됐는지 확인하고 그 잠금만 해제한 뒤 같은 명령으로 재개한다. 처리 위치를 지워서 강제로 다시 더하지 않는다. 이후 소비자는 `monthly_listens.pin_snapshot`이 돌려준 표별 버전으로 `versionAsOf`를 지정한다. [월별 집계 규칙](user_recording_counts.md#월별-silver-전환)에 중단 복구와 메타데이터 귀속 한계를 설명했다.
