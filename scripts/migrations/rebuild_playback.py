@@ -37,7 +37,7 @@ def identity(root):
             if (table / "_delta_log").is_dir()}
 
 
-def run(spark, production, work, export):
+def run(spark, production, work, export, *, silver_only=False):
     from flux.gold import artist_periods_build, dates, dim_date, dim_user, fact, fact_listens, mart, mart_build
     from flux.silver import build, schema, user_recording_counts
 
@@ -55,6 +55,10 @@ def run(spark, production, work, export):
         state = {"started_at": datetime.now(timezone.utc).isoformat(), "minimum_ms_played": 30000,
                  "production_before": identity(production), "stages": {}}
         atomic_save(state_path, state)
+
+    if "silver_only" in state and state["silver_only"] != silver_only:
+        raise RuntimeError("Rebuild scope changed")
+    state["silver_only"] = silver_only
 
     def path(relative):
         return (work / relative).as_uri()
@@ -102,6 +106,16 @@ def run(spark, production, work, export):
 
     stage("silver", [silver, quarantine], silver_stage)
     stage("counts", [counts], lambda: user_recording_counts.refresh(spark, path(silver), path(counts), rebuild=True))
+
+    if silver_only:
+        state["production_after"] = identity(production)
+        if state["production_after"] != state["production_before"]:
+            raise RuntimeError("Production identity or log changed")
+        state["completed"] = True
+        state["active_stage"] = None
+        persist()
+        print("silver rebuild completed; Gold not executed", flush=True)
+        return state
 
     def fact_stage():
         prepared = fact_listens.prepare(load(silver), built_at=built_at)
@@ -152,11 +166,12 @@ def main():
     parser.add_argument("--export-root", required=True)
     parser.add_argument("--memory", default="16g")
     parser.add_argument("--master", default="local[8]")
+    parser.add_argument("--silver-only", action="store_true")
     args = parser.parse_args()
     spark = session("flux-rebuild-30-seconds", memory=args.memory, master_url=args.master,
                     shuffle_partitions=256)
     try:
-        run(spark, args.production_root, args.work_root, args.export_root)
+        run(spark, args.production_root, args.work_root, args.export_root, silver_only=args.silver_only)
     finally:
         spark.stop()
 

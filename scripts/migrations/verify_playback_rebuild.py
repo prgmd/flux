@@ -128,6 +128,8 @@ def main():
     parser.add_argument("--production-root", type=Path, required=True)
     parser.add_argument("--rebuild-root", type=Path, required=True)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--silver-only", action="store_true")
+    parser.add_argument("--bronze-root", type=Path)
     args = parser.parse_args()
     root = args.rebuild_root
     state = json.loads((root / "rebuild.json").read_text(encoding="utf-8"))
@@ -150,13 +152,17 @@ def main():
         read_table(con, name, path, files)
         snapshots[name] = {"path": str(path), "state": initial, "files": files}
 
-    view("bronze", args.production_root / "bronze/raw_listens")
+    view("bronze", (args.bronze_root or args.production_root) / "bronze/raw_listens")
     report_path = root / "verification.json"
     report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {"checks": {}}
     report.pop("ok", None)
     report.pop("production_unchanged", None)
     atomic_save(report_path, report)
-    if "expected_silver" not in {r[0] for r in con.execute("show tables").fetchall()}:
+    cached = "expected_silver" in {r[0] for r in con.execute("show tables").fetchall()}
+    if cached and report.get("bronze_snapshot") != snapshots["bronze"]:
+        raise RuntimeError("Cached oracle Bronze snapshot changed or is missing")
+    report["bronze_snapshot"] = snapshots["bronze"]
+    if not cached:
         started = time.monotonic()
         prepare(con)
         report["preparation_seconds"] = round(time.monotonic() - started, 1)
@@ -175,6 +181,8 @@ def main():
               "users": "gold/dim_user", "calendar": "gold/dim_date"}
     from flux.silver import schema
     tables["quarantine"] = "silver/" + schema.QUARANTINE_TABLE_NAME
+    if args.silver_only:
+        tables = {name: path for name, path in tables.items() if name in {"silver", "quarantine", "counts"}}
     for name, relative in tables.items():
         view(name, root / relative)
     atomic_save(root / "verification-snapshots.json", snapshots)
@@ -193,6 +201,36 @@ def main():
           ["_source_dump", "_record_id"], ["user_name", "user_id", "recording_msid", "recording_mbid", "mbid_source", "artist_mbids", "listened_epoch"]))
     check("counts", lambda: compare(con, "select user_id, recording_msid, count(*) as play_count from silver group by user_id, recording_msid",
           "select * from counts", ["user_id", "recording_msid"], ["play_count"]))
+    if args.silver_only:
+        report["scope"] = "silver_only"
+        report["summary"] = {name: con.execute(f'select count(*) from "{name}"').fetchone()[0] for name in tables}
+        report["summary"]["bronze"] = con.execute("select count(*) from bronze").fetchone()[0]
+        report["summary"]["play_count_sum"] = con.execute("select sum(play_count) from counts").fetchone()[0]
+        checks = {
+            "duplicate_keys": "select count(*) from (select user_name,listened_at,recording_msid from silver group by all having count(*)>1)",
+            "null_keys": "select count(*) from silver where user_id is null or recording_msid is null or user_name is null or listened_at is null",
+            "invalid_counts": "select count(*) from counts where play_count<=0 or play_count is null",
+        }
+        report["integrity"] = {key: con.execute(sql).fetchone()[0] for key, sql in checks.items()}
+        report["integrity"]["cdf_off"] = int(snapshots["silver"]["state"]["properties"].get("delta.enableChangeDataFeed") != "true")
+        log = deltalog.commits(Path(snapshots["counts"]["path"]))[-1]
+        metadata = next(a["commitInfo"].get("userMetadata") for a in deltalog.actions(log) if "commitInfo" in a)
+        counts_state = json.loads(metadata)["user_recording_counts"]
+        report["integrity"]["counts_wrong_source"] = int(
+            counts_state["source_id"] != snapshots["silver"]["state"]["id"]
+            or counts_state["version"] != snapshots["silver"]["state"]["version"])
+        for name, snapshot in snapshots.items():
+            if table_state(Path(snapshot["path"])) != snapshot["state"]:
+                raise RuntimeError("Verified table changed: " + name)
+        if any(report["integrity"].values()) or report["summary"]["silver"] != report["summary"]["play_count_sum"]:
+            raise AssertionError(report)
+        if identity(args.production_root) != before:
+            raise RuntimeError("Production changed during verification")
+        report["ok"] = True
+        report["production_unchanged"] = True
+        atomic_save(report_path, report)
+        print("Silver 독립 대조 통과", flush=True)
+        return
     check("fact", lambda: compare(con, """select _source_dump, _record_id, user_id, listened_at, recording_mbid,
           release_mbid, mbid_source, client_name, duration_ms, listened_month,
           unnest(case when coalesce(len(artist_mbids), 0)=0 then [NULL] else list_distinct(artist_mbids) end) as artist_mbid

@@ -11,7 +11,8 @@ pytest.importorskip("delta")
 pytestmark = pytest.mark.spark
 
 
-def test_separate_rebuild_runs_all_stages_and_resumes(spark, tmp_path, monkeypatch):
+@pytest.mark.parametrize("silver_only", [False, True])
+def test_separate_rebuild_runs_all_stages_and_resumes(spark, tmp_path, monkeypatch, silver_only):
     script = Path(__file__).resolve().parents[1] / "scripts/migrations/rebuild_playback.py"
     spec = importlib.util.spec_from_file_location("playback_rebuild", script)
     module = importlib.util.module_from_spec(spec)
@@ -34,17 +35,37 @@ def test_separate_rebuild_runs_all_stages_and_resumes(spark, tmp_path, monkeypat
     dim_schema = "artist_mbid string, name string, valid_from string, valid_to string, is_current boolean"
     spark.createDataFrame([(artist, "artist", "1970-01-01", "9999-12-31", True)], dim_schema).write.format("delta").save((production / "gold/dim_artist").as_uri())
     shutil.copytree(production, work)
-    state = module.run(spark, production, work, export)
+    state = module.run(spark, production, work, export, silver_only=silver_only)
     assert state["completed"]
     assert state["production_before"] == module.identity(production)
-    assert len(state["stages"]) == 7
+    assert len(state["stages"]) == (2 if silver_only else 7)
     silver = spark.read.format("delta").load((export / "silver/listens_normalized").as_uri())
     assert {r._record_id for r in silver.select("_record_id").collect()} == {2, 3, 4}
     counts = spark.read.format("delta").load((export / "silver/user_recording_counts").as_uri())
     assert {r.user_id: r.play_count for r in counts.collect()} == {"u": 2, "v": 1}
+    if silver_only:
+        assert not (export / "gold").exists()
+        assert module.run(spark, production, work, export, silver_only=True)["stages"] == state["stages"]
+        import sys
+        spec = importlib.util.spec_from_file_location("verify_silver", script.with_name("verify_playback_rebuild.py"))
+        oracle = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(oracle)
+        monkeypatch.setattr(sys, "argv", ["verify", "--production-root", str(production), "--rebuild-root", str(export), "--silver-only"])
+        shutil.copytree(production / "bronze", export / "bronze")
+        monkeypatch.setattr(sys, "argv", sys.argv + ["--bronze-root", str(export)])
+        oracle.main()
+        with pytest.raises(RuntimeError, match="scope changed"):
+            module.run(spark, production, work, export)
+        assert json.loads((export / "verification.json").read_text())["ok"]
+        oracle.main()
+        bronze_log = export / "bronze/raw_listens/_delta_log/00000000000000000000.json"
+        bronze_log.write_text(bronze_log.read_text() + '\n' + json.dumps({"commitInfo": {"operation": "WRITE"}}))
+        with pytest.raises(RuntimeError, match="Cached oracle Bronze"):
+            oracle.main()
+        return
     period = spark.read.format("delta").load((export / "gold/mart_period_artist").as_uri())
     assert all((r.listens, r.listeners, r.top_user_listens) == (3, 2, 2) for r in period.collect())
-    assert module.run(spark, production, work, export)["stages"] == state["stages"]
+    assert module.run(spark, production, work, export, silver_only=silver_only)["stages"] == state["stages"]
     import sys
     spec = importlib.util.spec_from_file_location("verify_playback", script.with_name("verify_playback_rebuild.py"))
     oracle = importlib.util.module_from_spec(spec)
