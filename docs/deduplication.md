@@ -1,5 +1,7 @@
 # 중복 제거 규칙
 
+> 아래 수치는 과거 입력의 실측이다. 현재 월별 Silver도 같은 MSID 내 사건 중복 제거 후 반복을 play_count로 보존한다. 다른 MSID 사이의 곡 연결과 동일 사건 제거는 [조사 단계](user_recording_counts.md#곡-연결과-동일-청취-중복의-분리-조사)이며 아직 적용하지 않았다.
+
 명세 6.3의 키는 `user_name` + `listened_at` + `recording_msid`다.
 실측으로 확인한 것과 그 결과 정한 규칙이다.
 
