@@ -122,6 +122,8 @@ def compare(con, expected, actual, keys, columns):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--production-root", type=Path, required=True)
     parser.add_argument("--rebuild-root", type=Path, required=True)
@@ -228,6 +230,18 @@ def main():
                  cast(date_trunc('week',date) as date) as week_start from days""", "select * from calendar",
           ["date"], ["year", "month", "day", "listened_month", "iso_year", "iso_week", "day_of_week", "is_weekend", "week_start"]))
     check("integrity", lambda: integrity(con, snapshots))
+    atomic_save(root / "artist-rank-comparison.json", artist_ranks(con))
+    row = con.execute("""select count(*),count(distinct user_id),
+          count(*) filter(where len(artist_mbids)>0),
+          count(distinct user_id) filter(where len(artist_mbids)>0),
+          count(*) filter(where recording_mbid is null),
+          min(listened_at)::varchar,max(listened_at)::varchar from silver""").fetchone()
+    report["summary"] = dict(zip(("silver_rows", "silver_users", "linked_listens", "linked_users",
+                                   "without_recording_mbid", "first_listen_utc", "last_listen_utc"), row))
+    report["summary"]["coverage"] = row[2] / row[0]
+    report["summary"]["table_rows"] = {name: con.execute(f'select count(*) from "{name}"').fetchone()[0]
+                                           for name in tables}
+    report["summary"]["play_count_sum"] = con.execute("select sum(play_count) from counts").fetchone()[0]
     for name, snapshot in snapshots.items():
         if table_state(Path(snapshot["path"])) != snapshot["state"]:
             raise RuntimeError("Verified table changed: " + name)
@@ -264,6 +278,33 @@ def verify_periods(con):
       "select * exclude(top_user_share,coverage), round(top_user_share,12) as top_user_share, round(coverage,12) as coverage from periods",
       ["period", "period_start", "artist_mbid"],
       ["period_end", "listens", "listeners", "rank", "top_user_listens", "top_user_share", "period_listens", "linked_listens", "period_users", "linked_users", "coverage"])
+
+
+def artist_ranks(con):
+    result = con.execute("""with pairs as (
+      select artist_mbid, user_id, sum(n) as n from period_pairs
+      where period='day' group by artist_mbid,user_id
+    ), totals as (
+      select artist_mbid, sum(n) as listens, count(*) as listeners, max(n) as top_user_listens
+      from pairs group by artist_mbid
+    ), ranked as (
+      select *, rank() over(order by listens desc) as play_rank,
+                rank() over(order by listeners desc) as listener_rank from totals
+    ), names as (
+      select artist_mbid, min(name) as artist from dim where is_current group by artist_mbid
+    )
+    select r.*, coalesce(names.artist,r.artist_mbid) as artist,
+           round(top_user_listens*100.0/listens,2) as top_user_pct
+    from ranked r left join names using(artist_mbid) order by play_rank,artist_mbid""")
+    rows = [dict(zip([c[0] for c in result.description], row)) for row in result.fetchall()]
+    top_plays = rows[:20]
+    top_listeners = sorted(rows, key=lambda r: (r["listener_rank"], r["artist_mbid"]))[:20]
+    selected = {"3be217fb-2b91-4911-9454-6de69751f53b", "da04991d-8e8a-43be-9892-1e6342a77410",
+                "0d79fe8e-ba27-4859-bb8c-2f255f346853", "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "f59c5520-5f46-4d2c-b2c4-822eabf53419", "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"}
+    return {"artists": len(rows), "top_plays": top_plays, "top_listeners": top_listeners,
+            "selected": [r for r in rows if r["artist_mbid"] in selected],
+            "top20_overlap": len({r["artist_mbid"] for r in top_plays} & {r["artist_mbid"] for r in top_listeners})}
 
 
 def integrity(con, snapshots):

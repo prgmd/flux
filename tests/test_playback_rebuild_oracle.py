@@ -52,3 +52,19 @@ def test_empty_delta_uses_schema_without_parquet_files(tmp_path):
     module().read_table(con, "empty", tmp_path, [])
     assert con.execute('select * from "empty"').fetchall() == []
     assert con.execute('describe "empty"').fetchall()[0][1] == "BIGINT"
+
+
+def test_global_rank_reuses_daily_pairs_without_double_counting_weeks():
+    con = duckdb.connect()
+    rm = "3be217fb-2b91-4911-9454-6de69751f53b"
+    radiohead = "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+    con.execute("create table period_pairs(period varchar,artist_mbid varchar,user_id varchar,n bigint)")
+    con.executemany("insert into period_pairs values (?,?,?,?)", [
+        ("day", rm, "u", 3), ("day", rm, "u", 3), ("week", rm, "u", 6),
+        ("day", radiohead, "v", 1), ("day", radiohead, "w", 1)])
+    con.execute("create table dim(artist_mbid varchar,name varchar,is_current boolean)")
+    con.executemany("insert into dim values (?,?,true)", [(rm, "RM"), (radiohead, "Radiohead")])
+    result = {r["artist"]: r for r in module().artist_ranks(con)["selected"]}
+    assert (result["RM"]["listens"], result["RM"]["listeners"], result["RM"]["top_user_listens"]) == (6, 1, 6)
+    assert result["RM"]["listener_rank"] == 2
+    assert result["Radiohead"]["listener_rank"] == 1
