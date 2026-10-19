@@ -298,3 +298,8 @@ python scripts/pipeline/silver_monthly.py --bronze <Bronze경로> --output <월�
 ```
 
 이 진입점의 출력 경로는 파일 시스템의 로컬 경로를 사용한다. 네트워크 저장소의 분산 잠금으로 확장한 도구가 아니다. 강제 종료 후 `.writer.lock`이 남으면 작성자가 종료됐는지 확인하고 그 잠금만 해제한 뒤 같은 명령으로 재개한다. 처리 위치를 지워서 강제로 다시 더하지 않는다. 이후 소비자는 `monthly_listens.pin_snapshot`이 돌려준 표별 버전으로 `versionAsOf`를 지정한다. [월별 집계 규칙](user_recording_counts.md#월별-silver-전환)에 중단 복구와 메타데이터 귀속 한계를 설명했다.
+
+
+## 월별 및 연간 Gold 스냅샷
+
+새 월별 Silver용 실행은 [Gold 생성, 최종화와 독립 검수](monthly_gold.md#생성과-재검증)를 따른다. 기존 일별 Spark Gold 잡에 월별 Silver를 그대로 넣지 않는다. 최종 결과는 별도 Parquet 스냅샷과 조회용 DuckDB 뷰이며 운영 경로를 자동 교체하지 않는다.

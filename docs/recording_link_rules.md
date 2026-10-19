@@ -93,3 +93,6 @@ venv/Scripts/python scripts/investigations/catalog_title_variants.py --source <�
 이 규칙은 다른 MBID의 이름을 비교해 합치는 규칙이 아니다. MBID 충돌, 미수록, 버전 설명과 비디오는 기존 검토 조건을 유지한다. 괄호와 clean, explicit, sped up 표기를 지우지 않는다. 공식 이름과 비교가 통과해도 음원 동일성을 완전히 입증하는 것은 아니므로 제안 크레딧과 최종 적용 상태를 구분한다. 동명이인, 번역 제목, 관사와 별칭은 이 규칙 범위 밖이다.
 
 `tests/test_official_credit_audit.py`에서 문자 차이 통과와 미수록 ID 보류, 속도 변경 제목 보류, censored 및 live 설명 유지와 원문 보존을 확인한다. 첫 실패 후 구현했으며 전체 조사용 테스트 5개가 통과했다. 전수 적용 영향은 [전체 점검 결과](review_20261019.md)에 기록한다.
+
+
+현재 [Gold 스냅샷](monthly_gold.md)은 R8과 공식 녹음 제목 및 크레딧 대조를 통과한 후보를 MBID 키로 묶고 원본 MSID 연결표를 보존한다. 앨범 라벨만으로 연결 범위를 확대하지 않으며, Sped Up과 Remix 등 버전 문구를 지워 기본 제목으로 합치지 않는다. 다른 MSID 사이 동일 사건의 추가 차감은 후속 검수다.

@@ -1,12 +1,28 @@
 # 현재 아키텍처
 
-> 2026-10-19 최신 주 출력은 사용자 이름+MSID+UTC 월별 Silver와 메타데이터 사전 및 격리 표다. 월별 Gold는 아직 연결하지 않았다. 아래 그림과 상세 흐름은 2026-10-07의 이전 모델이며, 최신 완료 범위와 다음 작업은 [현재 상태](status.md)를 따른다.
+> 2026-10-19 최신 주 출력은 사용자 이름+MSID+UTC 월별 Silver와 메타데이터 사전 및 격리 표다. 현재 검수 범위의 월별 및 연간 Gold는 DuckDB로 계산한 별도 Parquet 스냅샷이다. [최신 Gold 계약](monthly_gold.md)을 따른다. 아래 그림과 상세 흐름은 2026-10-07의 이전 모델이며, 최신 완료 범위와 다음 작업은 [현재 상태](status.md)를 따른다.
 
 2026-10-07 저장소 코드 기준. 실행 중인 서비스의 상태를 조사한 문서는 아니다.
 
 ![현재 아키텍처](assets/architecture.png)
 
-## 데이터 흐름
+## 최신 월별 경로
+
+```mermaid
+flowchart LR
+    B[Bronze Delta] --> S[월별 Silver Delta]
+    M[MusicBrainz 공식 크레딧] --> R[곡 식별과 귀속 검수]
+    S --> R
+    S --> G[DuckDB 기간별 집계]
+    R --> G
+    G --> P[월별 및 연간 Gold Parquet]
+    P --> V[조회용 DuckDB 뷰]
+```
+
+운영 원본은 보존하며 완료 manifest와 검수 결과가 있는 새 스냅샷을 읽는다. 미확정 귀속과 버전 분류는 결과의 상태 및 커버리지에 남긴다.
+
+## 기존 상세 경로
+
 
 1. `src/flux/ingest/`에서 덤프 목록과 체크섬을 확인하고 다운로드와 이어받기를 처리한다.
 2. `src/flux/bronze/ingest.py`에서 청취 원본을 `raw_listens`에 보존한다.
