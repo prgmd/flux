@@ -103,3 +103,21 @@ GROUP BY recording_msid;
 기존 전수 검증 Silver를 줄일 때는 `scripts/migrations/compact_monthly_silver.py --verified-root <기존검증루트> --output <새경로>`를 사용한다. 기존 검증 증거와 고정 ID, 버전 및 로그 해시를 확인한 뒤 읽고 새 표를 만든다. 이어 `verify_monthly_silver.py`가 DuckDB로 모든 월별 키와 횟수, 메타데이터와 격리를 대조한다. 생성 완료와 독립 검증 완료는 별도 상태다. 새 데이터는 자동으로 운영 경로에 교체하지 않는다.
 
 현재 통합 Bronze v0에는 CDF가 없다. 초기 전환은 가능하지만 이후 덤프를 넣기 전에 대상 Bronze에서 CDF를 활성화해야 한다. 과거 버전이나 변경 이력을 보존하지 않은 구간은 소급 추측하지 않는다. 새 증분의 대규모 처리 성능은 아직 측정하지 않았다. 기존 Gold는 상세 입력에 의존하므로 월별 표를 기존 Gold 잡에 그대로 넘기지 않는다.
+
+## 월별 Gold의 아티스트 귀속 기준
+
+2026-10-19 결정: 해당 녹음의 공식 아티스트 크레딧에 있는 메인과 피처링 아티스트에게 청취 수를 부여한다. MusicBrainz의 recording `artist-credit`를 확인하고 제작자, 엔지니어 등 `relations`에만 있는 사람은 포함하지 않는다. 특정 인물을 전역 제외하는 규칙이 아니라 녹음별 크레딧을 확인하는 규칙이다. MusicBrainz에 기록된 크레딧을 근거로 사용하며 이 자료 자체의 오류 가능성도 남는다.
+
+월별 Silver 사전의 실제 변형을 공식 API와 대조한 표본에서 다음 사례를 확인했다. 전체 오류 건수나 비율을 측정한 결과는 아니다.
+
+| 곡 | 사전에 포함된 추가 ID의 이름 | 공식 artist-credit와 판단 |
+| --- | --- | --- |
+| [Reckoner](https://musicbrainz.org/ws/2/recording/d9b46ecb-5472-4dcd-8fa4-dd6723189e27?inc=artist-credits%20artist-rels&fmt=json) | Nigel Godrich, Hugo Nicolson, Richard Woodcraft | Radiohead만 있다. 추가 ID는 제작 또는 엔지니어 관계이며 Gold 아티스트 귀속에서 제외한다. |
+| [Pyramid Song](https://musicbrainz.org/ws/2/recording/666879c8-2083-4f64-bd7a-9a15bac75962?inc=artist-credits%20artist-rels&fmt=json) | Nigel Godrich, Gerard Navarro, Graeme Stewart | Radiohead만 있다. 제작진 혼입에 더해 Graeme Stewart는 이름이 같은 다른 인물의 ID가 붙었다. |
+| [Knives Out](https://musicbrainz.org/ws/2/recording/18441305-0d00-4f4f-a932-2e3262e8f793?inc=artist-credits%20artist-rels&fmt=json) | Nigel Godrich, Gerard Navarro, Graeme Stewart | Radiohead만 있다. Pyramid Song과 같은 잘못된 Graeme Stewart ID를 확인했다. |
+
+두 곡의 사전에 붙은 `1a764aaf-f21f-4182-b4de-cb47f6864ea4`는 [뉴질랜드 작곡가 Graeme Stewart](https://musicbrainz.org/ws/2/artist/1a764aaf-f21f-4182-b4de-cb47f6864ea4?fmt=json)다. 녹음의 공식 관계에 있는 인물은 `ec7f5406-6e7a-49f0-bee9-d53880f286f1`, [영국 엔지니어이자 프로듀서 Graeme Stewart](https://musicbrainz.org/ws/2/artist/ec7f5406-6e7a-49f0-bee9-d53880f286f1?fmt=json)다. 올바른 제작진 ID로 정정해도 공식 artist-credit에 없으므로 이 곡의 Gold 아티스트 청취 수는 부여하지 않는다.
+
+정상 대조군인 [Bad Blood의 해당 녹음](https://musicbrainz.org/ws/2/recording/d112254a-b6a1-4993-bdd9-ea4cd0926d4b?inc=artist-credits%20artist-rels&fmt=json)은 Taylor Swift와 Kendrick Lamar가 모두 공식 artist-credit에 있다. Kendrick Lamar는 유지한다. 같은 제목의 다른 버전까지 이 결론을 일반화하지 않는다.
+
+이번 단계는 기준 결정과 표본 조사다. Gold 구현과 데이터 교체는 하지 않았다. 원본 청취와 관측 메타데이터는 보존하고 Gold용 귀속 관계를 별도로 만든다. MBID가 없는 곡이나 공식 자료를 확인하지 못한 곡의 처리, 사전 변형 간 충돌 해결은 후속 구현 전에 정해야 한다.
