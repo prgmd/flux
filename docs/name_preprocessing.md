@@ -87,3 +87,5 @@ venv/Scripts/python scripts/investigations/build_name_character_catalog.py --sou
 이후 같은 표본을 [악센트 제거 포함 v2](measurements/2026-10-21-name-accents.md)로 다시 처리했다. 아티스트 비교 값 6행이 바뀌었고 기존 별칭 ID를 포함한 후보 키는 유지됐다. 새 참조 충돌은 없었지만 기존 버전 충돌과 MBID 없는 행은 계속 보류한다. 관련 테스트 28개가 통과했으며 전체 음악 코퍼스와 Spark는 실행하지 않았다.
 
 [Beyoncé 밖의 확대 검수](measurements/2026-10-21-accent-expansion.md)에서는 제한한 아티스트 범위에서 16개 곡 후보 묶음과 대조 행을 포함한 102행을 확인했다. Céline Dion과 L'Impératrice 등의 같은 공식 녹음 표기 쌍이 있었고, Jóga와 Glósóli 등에서는 라이브 및 믹스 참조가 새로 같은 이름 키에 연결되는 위험도 확인했다. bôa와 BoA는 이름 키만 같아지는 서로 다른 공식 아티스트였다. 문자 전처리 결과만으로 병합하지 않으며 전수 적용은 계속 보류한다.
+
+연결 허용 조건은 [R9 공식 ID 규칙](recording_link_rules.md#r9-공식-id를-확인한-악센트-후보-연결)을 따른다. 악센트 제거는 후보 탐색에만 사용하며, 양쪽의 검수한 공식 아티스트 ID와 현재 녹음 MBID 및 확인된 버전이 모두 같아야 연결 가능이다. 미확인 행에 ID를 전파하거나 Live, Remix, Sped Up을 일반 녹음에 흡수하지 않는다. 현재는 독립 판정 함수와 테스트만 추가했고 실제 데이터 연결은 보류한다.
