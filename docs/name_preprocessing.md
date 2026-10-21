@@ -85,3 +85,5 @@ venv/Scripts/python scripts/investigations/build_name_character_catalog.py --sou
 [42행 전후 비교와 충돌 검수](measurements/2026-10-21-name-preprocessing-preview.md)에서 승인 규칙과 검수 후보를 나눠 적용했다. 원래 이름과 공식 녹음 근거를 보존했고, 이름이 같아져도 여러 버전이 있으면 병합을 보류했다. 전수 적용 여부는 이 결과 검토 이후다.
 
 이후 같은 표본을 [악센트 제거 포함 v2](measurements/2026-10-21-name-accents.md)로 다시 처리했다. 아티스트 비교 값 6행이 바뀌었고 기존 별칭 ID를 포함한 후보 키는 유지됐다. 새 참조 충돌은 없었지만 기존 버전 충돌과 MBID 없는 행은 계속 보류한다. 관련 테스트 28개가 통과했으며 전체 음악 코퍼스와 Spark는 실행하지 않았다.
+
+[Beyoncé 밖의 확대 검수](measurements/2026-10-21-accent-expansion.md)에서는 제한한 아티스트 범위에서 16개 곡 후보 묶음과 대조 행을 포함한 102행을 확인했다. Céline Dion과 L'Impératrice 등의 같은 공식 녹음 표기 쌍이 있었고, Jóga와 Glósóli 등에서는 라이브 및 믹스 참조가 새로 같은 이름 키에 연결되는 위험도 확인했다. bôa와 BoA는 이름 키만 같아지는 서로 다른 공식 아티스트였다. 문자 전처리 결과만으로 병합하지 않으며 전수 적용은 계속 보류한다.

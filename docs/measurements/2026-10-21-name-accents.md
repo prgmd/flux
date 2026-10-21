@@ -58,3 +58,5 @@ venv/Scripts/python scripts/investigations/preview_name_sample.py --pool data/id
 ```
 
 최종 출력은 `data/name-preprocessing-accents-20261021-v2`다. before-after.md에 42행 전체 전후, rows.json에 원문과 단계별 변경, result.json의 baseline_comparison에 문자열 및 최종 후보 키 변화와 새로 같아진 쌍을 보관했다. v1 결과를 덮어쓰지 않았고 전수 적용은 계속 보류한다.
+
+후속 [다른 아티스트의 102행 확대 검수](2026-10-21-accent-expansion.md)에서는 같은 녹음으로 확인되는 표기 쌍과 새 버전 참조 충돌을 함께 확인했다. 위의 새 충돌 없음은 이 문서의 기존 42행 범위에만 해당한다.
