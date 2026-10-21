@@ -76,3 +76,8 @@ venv/Scripts/python scripts/investigations/build_name_character_catalog.py --sou
 ```
 
 입력은 Unicode 16.0.0의 Scripts.txt, ScriptExtensions.txt, NormalizationTest.txt와 security/16.0.0/confusables.txt다. Python의 UCD 버전이나 입력 파일 헤더 버전이 다르면 중단한다. 출력이 이미 있어도 덮어쓰지 않는다. 이번 생성은 음악 코퍼스를 읽지 않았고 Silver나 Gold를 재생성하지 않았다. 다음 단계는 이 매칭표에 실제 관측 빈도와 충돌 사례를 붙여 승인 범위를 보강한 후, 고정한 전처리 기준으로 MSID와 이름의 정확도를 비교하는 것이다.
+
+
+## 실제 표본에 적용한 전후 비교
+
+[42행 전후 비교와 충돌 검수](measurements/2026-10-21-name-preprocessing-preview.md)에서 승인 규칙과 검수 후보를 나눠 적용했다. 원래 이름과 공식 녹음 근거를 보존했고, 이름이 같아져도 여러 버전이 있으면 병합을 보류했다. 전수 적용 여부는 이 결과 검토 이후다.
