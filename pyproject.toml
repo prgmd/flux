@@ -30,3 +30,6 @@ spark = ["pyspark==4.2.0", "delta-spark==4.4.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"flux.silver" = ["name_matching_rules.json"]

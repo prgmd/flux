@@ -1,12 +1,11 @@
 import unicodedata
 
+from flux.silver.name_character_catalog import policy
+
 
 POLICY_VERSION = 'sample-name-v1'
-REVIEWED_ARTIST_ALIASES = {
-    'beyonce': '859d0860-d480-4efd-970c-c05d5f1776b8',
-    'beyoncé': '859d0860-d480-4efd-970c-c05d5f1776b8',
-}
-CHARACTERS = str.maketrans({'‘': "'", '’': "'", '‐': '-', '‑': '-'})
+REVIEWED_ARTIST_ALIASES = policy()['reviewed_artist_aliases']
+CHARACTERS = str.maketrans(policy()['approved_characters'])
 
 
 def normalize_text(value):

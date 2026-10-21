@@ -1,0 +1,43 @@
+{
+  "policy_version": "name-preprocessing-registry-v1",
+  "unicode_version": "16.0.0",
+  "default_action": "preserve",
+  "production_applied": false,
+  "approved_characters": {"‘": "'", "’": "'", "‐": "-", "‑": "-"},
+  "review_latin_transliterations": {
+    "ø":"o", "ł":"l", "đ":"d", "ð":"d", "þ":"th", "æ":"ae",
+    "œ":"oe", "ı":"i", "ħ":"h", "ŋ":"ng", "ŧ":"t", "ƒ":"f", "ĸ":"k"
+  },
+  "reviewed_artist_aliases": {
+    "beyonce": "859d0860-d480-4efd-970c-c05d5f1776b8",
+    "beyoncé": "859d0860-d480-4efd-970c-c05d5f1776b8"
+  },
+  "alias_evidence": "docs/measurements/2026-10-21-identity-samples.md",
+  "families": [
+    {"id":"canonical_forms","examples":["é","é","가","가"],"action":"NFC","scope":"comparison_only"},
+    {"id":"lowercase","examples":["A","a","É","é"],"action":"lower","scope":"comparison_only"},
+    {"id":"casefold_expansion","examples":["ß","ss","ſ","s","Σ","σ","ς"],"action":"review","scope":"candidate_only"},
+    {"id":"locale_case","examples":["I","i","İ","ı"],"action":"review","scope":"candidate_only"},
+    {"id":"latin_diacritics","examples":["é","è","ê","ë","ē","ě","ẽ","ę","ą","ñ","ç","ğ","ș"],"action":"review","scope":"candidate_only"},
+    {"id":"latin_transliteration","examples":["ø","ł","đ","ð","þ","æ","œ","ħ","ŋ"],"action":"review","scope":"candidate_only"},
+    {"id":"combining_order","examples":["ạ́","ạ́"],"action":"NFC","scope":"comparison_only"},
+    {"id":"width_compatibility","examples":["Ａ","A","ａ","a","１","1","＆","&"],"action":"review_NFKC","scope":"candidate_only"},
+    {"id":"decorative_compatibility","examples":["𝐀","A","ⓐ","a","K","K","Å","Å","ﬁ","fi"],"action":"review_NFKC","scope":"candidate_only"},
+    {"id":"whitespace","examples":[" ","\t","\n"," "," ","　"],"action":"collapse","scope":"comparison_only"},
+    {"id":"apostrophes","examples":["'","‘","’","ʼ","`","´"],"action":"approved_subset_else_review","scope":"comparison_only"},
+    {"id":"quotation_marks","examples":["\"","“","”","„","«","»"],"action":"preserve_review","scope":"candidate_only"},
+    {"id":"dashes_and_minus","examples":["-","‐","‑","‒","–","—","−"],"action":"approved_subset_else_review","scope":"comparison_only"},
+    {"id":"punctuation_and_brackets","examples":[".","…","/","⁄","∕","(",")","[","]","{","}"],"action":"preserve_review","scope":"candidate_only"},
+    {"id":"semantic_symbols","examples":["&","and","+","!","$","×","x","#","@"],"action":"preserve","scope":"original_and_comparison"},
+    {"id":"numbers","examples":["1","①","¹","Ⅳ","IV","٠","0"],"action":"preserve_review","scope":"candidate_only"},
+    {"id":"invisible_format","examples":["\u200b","\u200c","\u200d","\ufeff","\u00ad"],"action":"flag_preserve","scope":"original_and_comparison"},
+    {"id":"bidi_controls","examples":["\u202a","\u202e","\u2066","\u2069"],"action":"flag_preserve","scope":"original_and_comparison"},
+    {"id":"variation_and_emoji","examples":["❤","❤️","👩‍🎤","👍🏽"],"action":"preserve","scope":"original_and_comparison"},
+    {"id":"cross_script_lookalikes","examples":["A","А","Α","O","О","Ο"],"action":"flag_preserve","scope":"candidate_only"},
+    {"id":"entities_and_escaping","examples":["&amp;","&","&#39;","'","%20"," "],"action":"review_source_encoding","scope":"candidate_only"},
+    {"id":"mojibake","examples":["BeyoncÃ©","Beyoncé","â€™","’"],"action":"review_source_encoding","scope":"candidate_only"},
+    {"id":"artist_aliases","examples":["Beyonce","Beyoncé","Jung Kook","Jungkook"],"action":"review_official_identity","scope":"candidate_only"},
+    {"id":"version_qualifiers","examples":["Remix","Sped Up","Slowed","Live","Acoustic","Drumless","Clean","Explicit","Remaster","Edit","feat.","ft."],"action":"preserve","scope":"original_and_comparison"},
+    {"id":"other_scripts","examples":["방탄소년단","宇多田ヒカル","Би-2","أم كلثوم"],"action":"preserve_no_transliteration","scope":"original_and_comparison"}
+  ]
+}
