@@ -1,8 +1,9 @@
 {
-  "policy_version": "name-preprocessing-registry-v1",
+  "policy_version": "name-preprocessing-registry-v2",
   "unicode_version": "16.0.0",
   "default_action": "preserve",
   "production_applied": false,
+  "latin_accents": {"action":"remove_canonical_combining_marks_after_latin","fields":["artist","title"],"scope":"comparison_only","preserve_zero_combining_class":true,"identity_merge":false},
   "approved_characters": {"‘": "'", "’": "'", "‐": "-", "‑": "-"},
   "review_latin_transliterations": {
     "ø":"o", "ł":"l", "đ":"d", "ð":"d", "þ":"th", "æ":"ae",
@@ -18,7 +19,7 @@
     {"id":"lowercase","examples":["A","a","É","é"],"action":"lower","scope":"comparison_only"},
     {"id":"casefold_expansion","examples":["ß","ss","ſ","s","Σ","σ","ς"],"action":"review","scope":"candidate_only"},
     {"id":"locale_case","examples":["I","i","İ","ı"],"action":"review","scope":"candidate_only"},
-    {"id":"latin_diacritics","examples":["é","è","ê","ë","ē","ě","ẽ","ę","ą","ñ","ç","ğ","ș"],"action":"review","scope":"candidate_only"},
+    {"id":"latin_diacritics","examples":["é","è","ê","ë","ē","ě","ẽ","ę","ą","ñ","ç","ğ","ș"],"action":"remove_latin_accents","scope":"comparison_only"},
     {"id":"latin_transliteration","examples":["ø","ł","đ","ð","þ","æ","œ","ħ","ŋ"],"action":"review","scope":"candidate_only"},
     {"id":"combining_order","examples":["ạ́","ạ́"],"action":"NFC","scope":"comparison_only"},
     {"id":"width_compatibility","examples":["Ａ","A","ａ","a","１","1","＆","&"],"action":"review_NFKC","scope":"candidate_only"},

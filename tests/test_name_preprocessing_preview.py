@@ -11,9 +11,9 @@ def test_before_after_preserves_original_and_separates_alias_from_spelling():
     original=row('s','Beyonce\u0301','  I Can’t  ')
     result=preview(original)
     assert result['original']==original
-    assert result['approved']['artist']=='beyoncé'
+    assert result['approved']['artist']=='beyonce'
     assert result['approved']['title']=="i can't"
-    assert {c['rule'] for c in result['changes']}=={'NFC','lower','approved_characters','whitespace'}
+    assert {c['rule'] for c in result['changes']}=={'NFC','lower','latin_accents','approved_characters','whitespace'}
     assert result['approved']['artist_alias_mbid']=='859d0860-d480-4efd-970c-c05d5f1776b8'
     assert preview(row('s','Beyonce','Irreplaceable'))['approved']['artist']=='beyonce'
 
@@ -36,6 +36,42 @@ def test_equal_names_flag_reference_conflict_without_claiming_audio_identity():
     unverified=[preview(row('one','a','Song','studio')),preview(row('two','A','Song'))]
     assert review_groups(unverified,'approved')[0]['verdict']=='same_reference_with_unverified'
     with pytest.raises(ValueError):review_groups(records,'not_a_mode')
+
+
+def test_accent_fold_can_create_collisions_and_trace_matches_comparison():
+    from flux.silver.name_candidates import normalize_text
+
+    originals=[row('one','Résumé','Café (Remix)','first'),row('two','Resume','Cafe (Remix)','second')]
+    records=[preview(r) for r in originals]
+    assert review_groups(records,'approved')[0]['verdict']=='reference_conflict'
+    for original,record in zip(originals,records):
+        assert record['original']==original
+        for field,source in (('artist','artist_name'),('title','track_name')):
+            value=original[source]
+            for change in record['changes']:
+                if change['field']==field:
+                    assert change['before']==value
+                    value=change['after']
+            assert value==record['approved'][field]==normalize_text(original[source])
+
+
+def test_baseline_comparison_separates_text_changes_new_pairs_and_conflicts():
+    from copy import deepcopy
+
+    from flux.silver.name_preview import compare_baseline
+
+    current=[preview(row('one','a','Café','first')),preview(row('two','a','Cafe','second'))]
+    baseline=deepcopy(current)
+    baseline[0]['approved']['title']='café'
+    baseline[0]['approved']['candidate_key']=('artist_name','a','café')
+    result=compare_baseline(current,baseline)
+    assert result['changed_title_rows']==result['changed_candidate_key_rows']==1
+    assert result['newly_equal_pairs']==result['new_reference_conflict_pairs']==[[0,1]]
+    assert result['newly_equal_text_pairs']==result['new_text_reference_conflict_pairs']==[[0,1]]
+    assert result['text_key_count_before']==2 and result['text_key_count_after']==1
+    assert result['no_longer_equal_pairs']==[]
+    with pytest.raises(ValueError,match='same sample'):
+        compare_baseline(current,baseline[::-1])
 
 
 def test_sample_driver_exports_previews_and_guards_inputs(tmp_path,monkeypatch):
@@ -67,6 +103,11 @@ def test_sample_driver_exports_previews_and_guards_inputs(tmp_path,monkeypatch):
     assert result['completed'] and result['sample_rows']==2
     assert result['group_verdict_counts']['approved']=={'reference_conflict':1}
     assert json.loads((output/'rows.json').read_text(encoding='utf-8'))[0]['original']['track_name']=='I Can’t'
+    rerun=driver.run(pool,review,prepared,silver,tmp_path/'rerun',output/'rows.json')
+    assert rerun['baseline_comparison']['newly_equal_pairs']==[]
+    assert rerun['baseline_comparison']['changed_candidate_key_rows']==0
+    assert rerun['baseline_comparison']['changed_rows']==[]
+    assert str(output/'rows.json') in rerun['input_sha256']
     with pytest.raises(FileExistsError):driver.run(pool,review,prepared,silver,output)
     (silver/'recording_metadata/_delta_log/00000000000000000001.json').write_text('{}')
     with pytest.raises(ValueError,match='source'):driver.run(pool,review,prepared,silver,tmp_path/'stale')

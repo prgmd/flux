@@ -1,7 +1,8 @@
 import unicodedata as ud
 from collections import defaultdict
+from itertools import combinations
 
-from flux.silver.name_candidates import CHARACTERS, artist_alias_key, candidate_key, normalize_text
+from flux.silver.name_candidates import NORMALIZATION_STEPS, artist_alias_key, candidate_key, normalize_text
 from flux.silver.name_character_catalog import latin_candidate
 
 
@@ -30,11 +31,8 @@ def fields(artist,title):
 def preview(row):
     artist,title=row['artist_name'],row['track_name']
     changes=[]
-    steps=(('NFC',lambda v:ud.normalize('NFC',v)),('lower',str.lower),
-           ('approved_characters',lambda v:v.translate(CHARACTERS)),
-           ('whitespace',lambda v:' '.join(v.split())))
     for field,value in (('artist',artist),('title',title)):
-        for name,transform in steps:
+        for name,transform in NORMALIZATION_STEPS:
             after=transform(value)
             if value!=after:
                 changes.append({'field':field,'rule':name,'before':value,'after':after})
@@ -66,3 +64,44 @@ def review_groups(rows,mode):
                        'raw_name_pairs':len({(r['original']['artist_name'],r['original']['track_name']) for _,r in members}),
                        'reference_recordings':sorted(refs),'unknown_reference':unknown,'verdict':verdict})
     return result
+
+
+def compare_baseline(rows,baseline):
+    if [r['original'] for r in rows]!=[r['original'] for r in baseline]:
+        raise ValueError('baseline must contain the same sample in the same order')
+    def text_key(record):
+        return (record['approved']['artist'],record['approved']['title'])
+    def pairs(records,text_only=False):
+        groups=defaultdict(list)
+        for index,record in enumerate(records):
+            key=text_key(record) if text_only else tuple(record['approved']['candidate_key'])
+            groups[key].append(index)
+        return {pair for indices in groups.values() for pair in combinations(indices,2)}
+    old_pairs,new_pairs=pairs(baseline),pairs(rows)
+    old_text_pairs,new_text_pairs=pairs(baseline,True),pairs(rows,True)
+    added=sorted(new_pairs-old_pairs)
+    added_text=sorted(new_text_pairs-old_text_pairs)
+    def conflicts(added_pairs):
+        result=[]
+        for left,right in added_pairs:
+            refs=[rows[i]['original'].get('resolved_mbid') for i in (left,right)]
+            if all(refs) and refs[0]!=refs[1]:
+                result.append([left,right])
+        return result
+    changes=[]
+    for index,(current,old) in enumerate(zip(rows,baseline)):
+        old_fields={**old['approved'],'candidate_key':tuple(old['approved']['candidate_key'])}
+        current_fields={**current['approved'],'candidate_key':tuple(current['approved']['candidate_key'])}
+        if current_fields!=old_fields:
+            changes.append({'row':index,'before':old['approved'],'after':current['approved']})
+    return {'sample_rows':len(rows),'changed_artist_rows':sum(c['before']['artist']!=c['after']['artist'] for c in changes),
+            'changed_title_rows':sum(c['before']['title']!=c['after']['title'] for c in changes),
+            'changed_candidate_key_rows':sum(tuple(c['before']['candidate_key'])!=tuple(c['after']['candidate_key']) for c in changes),
+            'newly_equal_pairs':[list(p) for p in added],
+            'no_longer_equal_pairs':[list(p) for p in sorted(old_pairs-new_pairs)],
+            'new_reference_conflict_pairs':conflicts(added),
+            'text_key_count_before':len({text_key(r) for r in baseline}),
+            'text_key_count_after':len({text_key(r) for r in rows}),
+            'newly_equal_text_pairs':[list(p) for p in added_text],
+            'no_longer_equal_text_pairs':[list(p) for p in sorted(old_text_pairs-new_text_pairs)],
+            'new_text_reference_conflict_pairs':conflicts(added_text),'changed_rows':changes}

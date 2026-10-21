@@ -35,7 +35,9 @@ def test_unicode_range_parser_and_policy_contract(tmp_path):
     p.write_text('0041..005A ; Latin # letters\n0061 ; Latin\n03B1 ; Greek\n')
     assert load_ranges(p,'Latin')==set(range(65,91))|{97}
     config=policy()
-    assert config['policy_version']=='name-preprocessing-registry-v1'
+    assert config['policy_version']=='name-preprocessing-registry-v2'
+    accents=next(f for f in config['families'] if f['id']=='latin_diacritics')
+    assert accents['action']=='remove_latin_accents' and accents['scope']=='comparison_only'
     assert config['unicode_version']==unicodedata.unidata_version
     assert config['default_action']=='preserve'
     assert config['production_applied'] is False

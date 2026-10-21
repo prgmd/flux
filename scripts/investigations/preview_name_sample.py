@@ -9,7 +9,8 @@ from pathlib import Path
 import duckdb
 
 from flux.silver.name_character_catalog import policy
-from flux.silver.name_preview import MODES, preview, review_groups
+from flux.silver.name_candidates import POLICY_VERSION
+from flux.silver.name_preview import MODES, compare_baseline, preview, review_groups
 from flux.common import deltalog
 
 
@@ -30,9 +31,11 @@ def fingerprint(root):
             for n in ('recording_metadata','monthly_user_recordings')}
 
 
-def run(pool,review,prepared,silver,output):
+def run(pool,review,prepared,silver,output,baseline=None):
     pool,review,prepared,silver,output=(p.resolve() for p in (pool,review,prepared,silver,output))
-    for path in (pool,review,prepared,silver):
+    baseline=baseline.resolve() if baseline is not None else None
+    inputs=(pool,review,prepared,silver)+((baseline,) if baseline else ())
+    for path in inputs:
         if output==path or path in output.parents or output in path.parents:
             raise ValueError('overlapping output')
     old=json.loads(review.read_text(encoding='utf-8'))
@@ -41,10 +44,11 @@ def run(pool,review,prepared,silver,output):
         raise ValueError('sample source mismatch')
     if ud.unidata_version!=policy()['unicode_version']:
         raise ValueError('Unicode version mismatch')
-    hashes={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in (pool,review)}
+    hashes={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in (pool,review)+((baseline,) if baseline else ())}
     output.mkdir(parents=True,exist_ok=False)
     result={'completed':False,'production_applied':False,'full_corpus_scanned':False,'source_before':before,
-            'input_sha256':hashes,'unicode_version':ud.unidata_version,'registry':policy()}
+            'input_sha256':hashes,'unicode_version':ud.unidata_version,'registry':policy(),
+            'candidate_policy_version':POLICY_VERSION}
     report=output/'result.json';report.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     selected={}
     def add(row,reason):
@@ -68,6 +72,8 @@ def run(pool,review,prepared,silver,output):
     c.close()
     rows=sorted(selected.values(),key=lambda r:(r['recording_msid'],r['artist_name'],r['track_name'],r['recording_mbid'] or ''))
     output_rows=[preview({**row,'sample_id':i}) for i,row in enumerate(rows)]
+    if baseline:
+        result['baseline_comparison']=compare_baseline(output_rows,json.loads(baseline.read_text(encoding='utf-8')))
     official=duckdb.connect(str(prepared/'experiment.duckdb'),read_only=True);official.execute('set threads=2')
     refs=sorted({r['resolved_mbid'] for r in rows if r['resolved_mbid']})
     expected={gid:(name,comment) for gid,name,comment in official.execute(
@@ -109,4 +115,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser()
     for n in ('pool','review','prepared','silver','output'):
         p.add_argument('--'+n,type=Path,required=True)
-    a=p.parse_args();run(a.pool,a.review,a.prepared,a.silver,a.output)
+    p.add_argument('--baseline',type=Path)
+    a=p.parse_args();run(a.pool,a.review,a.prepared,a.silver,a.output,a.baseline)

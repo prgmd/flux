@@ -4,7 +4,7 @@ MSID와 이름 기준을 비교하기 전에 사용하는 문자 대조 사전�
 
 ## 기준과 범위
 
-실행 Python의 `unicodedata.unidata_version`은 16.0.0이다. [Python 문서](https://docs.python.org/3.14/library/unicodedata.html)와 [Unicode 16.0.0 UCD](https://www.unicode.org/Public/16.0.0/ucd/ReadMe.txt)를 기준으로 버전을 고정했다. 최신 Unicode와 같다고 가정하지 않는다. 규칙 버전은 `name-preprocessing-registry-v1`이다.
+실행 Python의 `unicodedata.unidata_version`은 16.0.0이다. [Python 문서](https://docs.python.org/3.14/library/unicodedata.html)와 [Unicode 16.0.0 UCD](https://www.unicode.org/Public/16.0.0/ucd/ReadMe.txt)를 기준으로 버전을 고정했다. 최신 Unicode와 같다고 가정하지 않는다. 현재 규칙은 `name-preprocessing-registry-v2`, 표본 비교 함수는 `sample-name-v2-latin-accents`다. v1의 문자표 생성 결과는 당시 정책 사본과 함께 보존하고, v2는 [같은 42행의 악센트 제거 재검수](measurements/2026-10-21-name-accents.md)에 적용했다.
 
 Unicode 스칼라 값 1,112,064개를 순회해 다음 범위의 관련 문자 21,708개를 대조했다.
 
@@ -23,7 +23,7 @@ Unicode 스칼라 값 1,112,064개를 순회해 다음 범위의 관련 문자 2
 | 대소문자 | A/a, É/é | 기존 비교용 소문자 규칙 유지 |
 | casefold 확장 | ß/ss, ſ/s, Σ/σ/ς | 별도 후보, 자동 적용 보류 |
 | 언어별 대소문자 | I/i/İ/ı | 언어와 별칭 검수 필요 |
-| 라틴 악센트 | é/è/ê/ë/ē/ě/ẽ/ę, ñ/ç/ğ/ș | 악센트 제거 결과를 후보 컬럼에만 기록 |
+| 라틴 악센트 | é/è/ê/ë/ē/ě/ẽ/ę, ñ/ç/ğ/ș | 표본의 아티스트 및 곡 비교용 값에서 제거, 원문과 운영 데이터 보존 |
 | 합자와 전사 | æ/ae, œ/oe, ø/o, ł/l, þ/th | 개별 검수, 전역 동등 처리 안 함 |
 | 결합 부호 순서 | a+acute+dot와 a+dot+acute | 정준적으로 같은 경우만 NFC |
 | 전각과 반각 | Ａ/A, ａ/a, １/1, ＆/& | NFKC 후보, 자동 적용 보류 |
@@ -49,9 +49,11 @@ Unicode 스칼라 값 1,112,064개를 순회해 다음 범위의 관련 문자 2
 
 ## 매칭표의 파일과 필드
 
-검수하는 규칙은 `src/flux/silver/name_matching_rules.json`에 둔다. 25개 유형과 승인된 문자 치환 4개, Beyoncé 별칭 및 그 근거가 들어 있다. 기존 `name_candidates.py`는 이 파일에서 승인된 치환과 별칭만 읽는다. 후보 함수의 기존 결과는 유지한다.
+검수하는 규칙은 `src/flux/silver/name_matching_rules.json`에 둔다. 25개 유형과 승인된 문자 치환 4개, 라틴 악센트 처리 범위, Beyoncé 별칭 및 그 근거가 들어 있다. `name_candidates.py`의 비교 문자열에는 NFC, 소문자, 라틴 악센트 제거, 승인 문자 치환과 공백 압축을 순서대로 적용한다. 같은 단계 목록을 미리보기 이력에도 사용한다. 악센트 제거는 NFD로 분해한 뒤 라틴 글자에 이어진 정준 결합 부호를 제거하고 NFC로 다시 조합한다. 결합 클래스가 0인 선택자와 형식 문자는 이 단계에서 지우지 않으며 다른 문자 체계는 전사하지 않는다.
 
-전체 생성 결과는 로컬 `data/name-character-catalog-20261021-final`에 둔다.
+별칭 조회는 악센트 제거 전 철자를 사용한다. 확인된 Beyonce와 Beyoncé는 같은 공식 아티스트 후보 ID를 유지하지만, 미검수 철자가 단지 beyonce가 되었다고 공식 ID를 새로 부여하지 않는다. 곡명의 Café와 Cafe도 비교 키는 같아질 수 있으므로 같은 녹음의 승인은 별도다. `œ → oe`, `ø → o`와 `ß → ss`는 이번 승인 범위에 포함하지 않는다. 소문자 및 악센트 단계 때문에 `İ → i`는 되지만 `ı`는 보존한다. 언어별 철자 전체의 동등성을 승인한 것은 아니다.
+
+v1 전체 문자표 생성 결과는 로컬 `data/name-character-catalog-20261021-final`에 둔다. 아래 수치와 그 안의 policy.json은 v1 실행 기록이며 v2 정책으로 다시 생성했다고 해석하지 않는다.
 
 | 파일 | 내용 |
 | --- | --- |
@@ -81,3 +83,5 @@ venv/Scripts/python scripts/investigations/build_name_character_catalog.py --sou
 ## 실제 표본에 적용한 전후 비교
 
 [42행 전후 비교와 충돌 검수](measurements/2026-10-21-name-preprocessing-preview.md)에서 승인 규칙과 검수 후보를 나눠 적용했다. 원래 이름과 공식 녹음 근거를 보존했고, 이름이 같아져도 여러 버전이 있으면 병합을 보류했다. 전수 적용 여부는 이 결과 검토 이후다.
+
+이후 같은 표본을 [악센트 제거 포함 v2](measurements/2026-10-21-name-accents.md)로 다시 처리했다. 아티스트 비교 값 6행이 바뀌었고 기존 별칭 ID를 포함한 후보 키는 유지됐다. 새 참조 충돌은 없었지만 기존 버전 충돌과 MBID 없는 행은 계속 보류한다. 관련 테스트 28개가 통과했으며 전체 음악 코퍼스와 Spark는 실행하지 않았다.
