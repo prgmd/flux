@@ -1,0 +1,13 @@
+flux_gold:
+  target: pilot
+  outputs:
+    pilot:
+      type: duckdb
+      path: "{{ env_var('FLUX_DBT_DATABASE') }}"
+      schema: analytics
+      threads: 2
+      settings:
+        threads: 2
+        memory_limit: 2GB
+        TimeZone: UTC
+        enable_external_access: false

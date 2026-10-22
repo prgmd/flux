@@ -1,0 +1,21 @@
+version: 2
+sources:
+  - name: pinned
+    database: "{{ target.database }}"
+    schema: pinned
+    description: "완료 지문을 확인한 P0 표본의 로컬 복사본. 원본 Delta를 직접 읽지 않는다."
+    config:
+      meta:
+        baseline_sha256: "{{ env_var('FLUX_DBT_BASELINE_SHA256') }}"
+        listener_key: user_name
+        time_basis: UTC listening month
+        approval_scope: reference-only, zero human mappings
+    tables:
+      - name: monthly
+        description: "사용자 이름과 MSID 및 UTC 월별 play_count. 반복 청취를 보존한다."
+      - name: song_dimension
+        description: "기존 정책이 고정한 MSID별 곡 키와 버전. MBID 누락은 허용한다."
+      - name: song_labels
+        description: "기존 곡 키별 대표 이름, 버전 및 식별 상태. 이번 이전에서 다시 판정하지 않는다."
+      - name: song_credits
+        description: "기존 검증 범위의 공식 참여 아티스트 귀속. 새 사람 승인을 추가하지 않는다."

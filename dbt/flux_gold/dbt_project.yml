@@ -1,0 +1,15 @@
+name: flux_gold
+version: '0.1.0'
+config-version: 2
+profile: flux_gold
+model-paths: [models]
+test-paths: [tests]
+macro-paths: [macros]
+models:
+  flux_gold:
+    +materialized: view
+    +persist_docs:
+      relation: true
+      columns: true
+    marts:
+      +materialized: table
