@@ -39,4 +39,24 @@ source_state에는 Silver 로그 지문, 공식 스냅샷 식별자와 입력 �
 
 `tests/test_review_journal.py`는 모듈 부재 실패부터 확인했다. 원문 보존과 방향에 무관한 후보 ID, 같은 근거의 재등록, 판단 변경 이력, 최신 판단 요구, 미확인 승인 차단, agent와 human 구분, 새 근거 및 조회 기준 변경, 규칙 변경, 불완전한 줄과 변경된 근거, 잠금, 존재하지 않는 대상과 상충 승인 내보내기 차단을 검사한다. 새 테스트 9개와 기존 관련 회귀 합계 69개가 통과했다.
 
-현재 단계는 저장 및 검증 기능이다. 실제 표본 근거 수집, 검수 기록과 별도 사본 검증 결과는 다음 단계에서 추가한다. FastAPI와 전수 적용 및 운영 데이터 변경은 포함하지 않는다.
+102행의 실제 표본을 공식 자료에 다시 대조하고 후보 51쌍의 agent 판단 및 별도 월별 사본 검증까지 완료했다. 전체 관련 회귀는 79개가 통과했다. [실제 결과와 한계](measurements/2026-10-22-recording-review.md)를 따른다. FastAPI와 사람 승인, 전수 적용 및 운영 데이터 변경은 포함하지 않는다.
+
+## 공식 근거를 만드는 단계
+
+`flux.review.evidence`는 원래 MBID가 현재 공식 녹음 ID와 같거나 공식 redirect의 숫자 대상이 해당 녹음 행과 같을 때만 녹음 근거를 확인한다. 원래 MBID가 NULL이면 현재 ID를 채워 넣지 않는다. 공식 아티스트 크레딧의 전체 ID 집합을 보존하며 로컬 이름을 공식 아티스트 이름 또는 이미 검수한 별칭과 대조한다. 악센트만 다른 이름은 제출된 아티스트 ID 집합도 공식 크레딧과 같아야 확인한다. 이름의 악센트 제거만으로 귀속을 확정하지 않는다.
+
+공식 아티스트 대표 이름과 발매 크레딧의 표시 이름은 다를 수 있다. 기존 표본의 공식 이름은 artist 표의 대표 이름이므로 같은 열로 재대조한다. 실제 VOCES8와 Voces8의 차이에서 잘못된 변경 감지를 발견하고 테스트로 고정했다.
+
+버전은 공식 제목과 설명, 로컬 버전 문구 및 video 여부를 함께 본다. Live, Remix와 Sped Up 등은 버전 키에 남긴다. 버전 표기가 없는 경우 `recording:<공식 MBID>`를 쓰며 녹음 ID에 한정된 키다. 이를 original 음원이라고 단정하지 않는다. 모르는 버전 설명, 영상 또는 원문과 공식 버전 표기의 모순은 보류한다.
+
+## 월별 사본으로 옮기는 조건
+
+관측 승인과 MSID 전체 승인은 다르다. 월별 표는 사용자+MSID+월까지 요약돼 있어 어느 메타데이터 관측에서 나온 횟수인지 복원할 수 없다. 따라서 승인 후보 MSID의 메타데이터 변형을 현재 활성 사전 전체에서 읽고, 모든 변형이 같은 공식 아티스트 집합과 녹음 및 버전으로 승인된 경우에만 MSID 전체를 옮긴다. NULL MBID나 미검수 변형 하나라도 있으면 제외한다. 같은 곡의 다른 완전한 MSID가 없으면 연결할 상대가 없으므로 제외한다.
+
+`flux.review.sandbox`는 최대 100만 월별 행의 표본만 새 경로에 저장한다. before.parquet에서 독립 Python 집계를 만들고 DuckDB의 after.parquet와 모든 키를 대조한다. 같은 고정 입력을 재계산한 repeat.parquet도 대조한다. 청취 수 합은 그대로 보존한다. 이는 고정 표본의 곡 연결 및 재계산 검증이며 새 덤프의 CDF 증분이나 사건 중복 차감을 검증한 것이 아니다.
+
+## 실행과 후속 사람 검수
+
+Git Bash에서는 `PYTHONPATH=src venv/Scripts/python scripts/investigations/run_recording_review.py --help`로 입력 경로를 확인한다. sample은 102행 표본 디렉터리, prepared는 이전 실험의 공식 ID 조회 데이터베이스, silver는 고정 월별 Silver, snapshot과 redirects는 공식 추출 스냅샷, output은 존재하지 않는 별도 경로다. 이전 실험 전체의 완료 상태를 재사용하지 않으며 현재 활성 Silver 메타데이터를 다시 읽는다. 공식 파일의 해시와 선택한 행 및 크레딧을 재대조한다. 실행 전후 Silver 로그 지문, 표본과 매니페스트 해시, 검증한 공식 파일의 크기 및 수정 시각이 유지돼야 completed가 된다.
+
+출력의 review.md에서 원문과 사유 및 근거 ID를 읽고 facts.json에서 공식 녹음과 크레딧, redirect를 확인한다. 사람이 직접 결정할 때는 `PYTHONPATH=src venv/Scripts/python -m flux.review.cli --help`의 필수 항목을 채운다. journal, evidence, status, reason, note, reviewer-kind와 reviewer-id를 모두 명시한다. 이미 판단이 있으면 decisions.jsonl의 최신 decision_id를 supersedes로 지정한다. 오래된 판단 ID나 미확인 후보에 대한 승인은 거절된다. 사람 검수를 수행하지 않은 실행은 reviewer-kind에 human을 사용하지 않는다.
