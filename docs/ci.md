@@ -23,3 +23,8 @@ GitHub의 Linux 실행도 [성공했다](measurements/2026-10-23-ci.md). 기본 
 로컬에서는 `python -m pytest -q`로 기본 검사를 실행한다. dbt 환경에서는 워크플로에 지정한 네 테스트 파일을 `-m dbt`로, GX 환경에서는 `tests/test_gx_runtime.py -m gx`로 실행한다. 설치와 실행 명령의 정본은 [.github/workflows/data-contracts.yml](../.github/workflows/data-contracts.yml)이다.
 
 공식 참고 자료: [GitHub의 Python 빌드 및 테스트](https://docs.github.com/en/actions/tutorials/build-and-test-code/python), [checkout](https://github.com/actions/checkout), [setup-python](https://github.com/actions/setup-python).
+
+
+## 실제 CDF 연결 추가 후 자동 회귀
+
+코드 94f530f의 [실행 39912952332](https://github.com/prgmd/flux/actions/runs/39912952332)도 세 작업이 모두 성공했다. 기본 로직은 989 passed, 21 skipped, 12 deselected in 20.85s, dbt는 7 passed in 292.19s (0:04:52), GX는 11 passed in 11.76s다. Windows의 실제 explorer 표본 검사 한 개를 구분한다. 실제 CDF와 Gold의 연결 두 검사는 Spark 내보내기를 사용한 별도 로컬 통합이며 CI의 dbt 7개와 구분한다. [검증 범위](measurements/2026-10-23-silver-cdf-gold.md)를 따른다.
