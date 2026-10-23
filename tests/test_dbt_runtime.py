@@ -16,15 +16,25 @@ def test_real_dbt_preserves_semantics_and_rejects_injected_data_errors(baseline,
     root=tmp_path/'pilot';bootstrap(baseline,root)
     result=execute(root,Path(__file__).resolve().parents[1]/'dbt/flux_gold')
     assert result['completed'] is True,result.get('failure')
-    assert result['final_comparison']['plays']==18
-    assert result['documentation']['models']==7 and result['documentation']['sources']==4
-    assert result['build_nodes']=={'success':7,'pass':37}
+    assert result['final_comparison']['plays']==24
+    assert result['final_comparison']['tables_checked']==7
+    assert result['documentation']['models']==14 and result['documentation']['sources']==4
+    assert result['documentation']['mart_lineage_checked']==7
+    assert result['build_nodes']['success']==14
+    assert result['build_nodes']['pass']==81
     with duckdb.connect(str(root/'pilot.duckdb'),read_only=True) as c:
         assert c.execute("select listens,listeners,top_user_listens from analytics.monthly_song_metrics where song_key='mbid:r' and period_start='2026-01-01'").fetchone()==(6,2,5)
-        assert c.execute("select period_listens,linked_listens,period_users,linked_users from analytics.monthly_coverage where period_start='2026-01-01'").fetchone()==(14,6,3,2)
-        assert c.execute("select count(*) from analytics.monthly_song_metrics where period_start='2026-01-01' and listener_rank=2").fetchone()[0]==2
+        assert c.execute("select period_listens,linked_listens,period_users,linked_users from analytics.monthly_coverage where period_start='2026-01-01'").fetchone()==(20,12,3,3)
+        assert c.execute("select count(*) from analytics.monthly_song_metrics where period_start='2026-01-01' and listener_rank=1").fetchone()[0]==2
         assert c.execute("select variant from analytics.monthly_song_metrics where song_key='msid:fast'").fetchone()[0]=='sped_up+remix'
-        assert c.execute("select song_name from analytics.monthly_song_metrics where period_start='2026-01-01' and listener_rank=2 order by song_name,song_key").fetchall()==[('Song (sped up remix)',),('Unknown',)]
+        assert c.execute("select song_name from analytics.monthly_song_metrics where period_start='2026-01-01' and listener_rank=1 order by song_name,song_key").fetchall()==[('Another',),('Song',)]
+        assert c.execute("select listens,listeners,top_user_listens from analytics.monthly_artist_metrics where artist_mbid='a' and period_start='2026-01-01'").fetchone()==(12,3,9)
+        assert c.execute("select sum(listens) from analytics.monthly_artist_metrics where period_start='2026-01-01'").fetchone()[0]==18
+        assert c.execute("select song_listen_share,song_listener_reach,artist_song_rank from analytics.monthly_artist_song_metrics where artist_mbid='a' and song_key='mbid:r' and period_start='2026-01-01'").fetchone()==(0.5,2/3,1)
+        assert c.execute("select count(*) from analytics.monthly_artist_song_metrics where artist_mbid='a' and artist_song_rank=1 and period_start='2026-01-01'").fetchone()[0]==2
+        assert c.execute("select listens,listeners,top_user_listens from analytics.monthly_variant_metrics where variant='unmarked' and period_start='2026-01-01'").fetchone()==(13,3,9)
+        assert c.execute("select listens,song_count,top_song_share from analytics.monthly_listener_metrics where listener_key=sha256('u1') and period_start='2026-01-01'").fetchone()==(9,2,5/9)
+        assert c.execute("select listens,listeners from analytics.monthly_identity_coverage where identity_status='no_mbid' and period_start='2026-01-01'").fetchone()==(8,2)
     faults=drill(root)
-    assert faults['drill_passed'] is True and faults['scenarios_checked']==5
+    assert faults['drill_passed'] is True and faults['scenarios_checked']==10
     assert faults['canonical_database_unchanged'] is True

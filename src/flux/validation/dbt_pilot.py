@@ -14,7 +14,7 @@ from flux.validation.pinning import sha256,verify_bundle
 
 SOURCES={'monthly':['user_name','recording_msid','listened_month'],'song_dimension':['recording_msid'],
          'song_labels':['song_key'],'song_credits':['song_key','artist_mbid']}
-MARTS={'song_metrics':'monthly_song_metrics','coverage':'monthly_coverage'}
+MARTS={name:'monthly_'+name for name in KEYS}
 
 
 def save(root,result):
@@ -56,7 +56,7 @@ def bootstrap(baseline,output):
         for name in SOURCES:c.execute('create table pinned.'+name+' as select * from read_parquet(?)',[str(output/'inputs'/(name+'.parquet'))])
     verify_bundle(baseline)
     if before!=sha256(baseline/'result.json'):raise ValueError('baseline changed during bootstrap')
-    info={'prepared':True,'production_applied':False,'scope':'fixed monthly sample, two marts only',
+    info={'prepared':True,'production_applied':False,'scope':'fixed monthly sample, seven monthly marts only',
           'baseline_path':str(baseline),'baseline_sha256':before,'context':scope,
           'artifacts':{p.relative_to(output).as_posix():sha256(p) for d in ['inputs','expected'] for p in sorted((output/d).iterdir())}}
     (output/'inputs.json').write_text(json.dumps(info,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
@@ -98,7 +98,7 @@ def compare_snapshot(root):
                 frozen_schema=c.execute('describe select * from read_parquet(?)',[str(root/'expected'/(old+'.parquet'))]).fetchall()
                 if [(r[0],r[1]) for r in actual_schema]!=[(r[0],r[1]) for r in frozen_schema]:raise ValueError('mart column/type mismatch')
                 counts[new]=len(actual)
-        return {'tables_checked':2,'mismatches':0,'checks_against':['frozen P0','Python oracle','legacy SQL'],
+        return {'tables_checked':len(MARTS),'mismatches':0,'checks_against':['frozen P0','Python oracle','legacy SQL'],
                 'table_rows':counts,'plays':sum(r['play_count'] for r in saved['monthly']),
                 'source_rows':len(saved['monthly']),'source_tables_unchanged':True,'float_tolerance':1e-12}
 
@@ -126,7 +126,12 @@ def artifacts(target):
     manifest=json.loads((target/'manifest.json').read_text(encoding='utf-8'))
     catalog=json.loads((target/'catalog.json').read_text(encoding='utf-8'))
     required={'monthly_song_metrics':{'int_user_monthly_songs','stg_song_labels'},
-              'monthly_coverage':{'int_user_monthly_songs','stg_song_credits'}}
+              'monthly_coverage':{'int_user_monthly_songs','stg_song_credits'},
+              'monthly_artist_metrics':{'int_user_monthly_artists','stg_song_credits'},
+              'monthly_artist_song_metrics':{'monthly_song_metrics','stg_song_credits','monthly_artist_metrics'},
+              'monthly_variant_metrics':{'int_user_monthly_variants','monthly_coverage'},
+              'monthly_listener_metrics':{'int_user_monthly_songs'},
+              'monthly_identity_coverage':{'int_user_monthly_songs','stg_song_labels'}}
     for name,parents in required.items():
         node='model.flux_gold.'+name
         actual=set(manifest['nodes'][node]['depends_on']['nodes'])
@@ -136,7 +141,7 @@ def artifacts(target):
             raise ValueError('missing catalog column descriptions')
     if not (target/'index.html').is_file():raise ValueError('docs index missing')
     models=[n for n in manifest['nodes'].values() if n['resource_type']=='model']
-    return {'models':len(models),'sources':len(manifest['sources']),'mart_lineage_checked':2,
+    return {'models':len(models),'sources':len(manifest['sources']),'mart_lineage_checked':len(required),
             'catalog_models':len(catalog['nodes']),'docs_generated':True}
 
 

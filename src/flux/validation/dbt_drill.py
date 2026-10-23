@@ -18,7 +18,12 @@ def drill(root):
            ('zero_count',"update pinned.monthly set play_count=0 where rowid=(select min(rowid) from pinned.monthly)",'build','positive_integer_stg_monthly_play_count'),
            ('missing_dimension',"delete from pinned.song_dimension where recording_msid=(select recording_msid from pinned.monthly limit 1)",'build','relationships_stg_monthly_recording_msid'),
            ('wrong_rank',"update analytics.monthly_song_metrics set listener_rank=999999",'test','monthly_joint_ranks'),
-           ('wrong_coverage',"update analytics.monthly_coverage set linked_listens=period_listens+1",'test','monthly_coverage_bounds')]
+           ('wrong_coverage',"update analytics.monthly_coverage set linked_listens=period_listens+1",'test','monthly_coverage_bounds'),
+           ('wrong_artist',"update analytics.monthly_artist_metrics set top_user_listens=top_user_listens+1",'test','monthly_artist_reconciliation'),
+           ('wrong_artist_song',"update analytics.monthly_artist_song_metrics set song_listen_share=0",'test','monthly_artist_song_reconciliation'),
+           ('wrong_variant',"update analytics.monthly_variant_metrics set listen_share=0",'test','monthly_variant_reconciliation'),
+           ('wrong_listener',"update analytics.monthly_listener_metrics set song_count=song_count+1",'test','monthly_listener_reconciliation'),
+           ('wrong_identity',"update analytics.monthly_identity_coverage set listens=listens+1",'test','monthly_identity_reconciliation')]
     for name,sql,command,expected in cases:
         output=directory/name;output.mkdir()
         shutil.copyfile(root/'pilot.duckdb',output/'pilot.duckdb')
