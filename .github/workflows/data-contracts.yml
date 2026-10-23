@@ -1,0 +1,109 @@
+name: 데이터 계약 검증
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - tests/**
+      - dbt/**
+      - scripts/**
+      - requirements-*.txt
+      - pyproject.toml
+      - pytest.ini
+      - .github/workflows/**
+  pull_request:
+    branches: [main]
+    paths:
+      - src/**
+      - tests/**
+      - dbt/**
+      - scripts/**
+      - requirements-*.txt
+      - pyproject.toml
+      - pytest.ini
+      - .github/workflows/**
+  workflow_dispatch:
+    inputs:
+      run_integrations:
+        description: dbt와 GX 실제 검증도 실행
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONPATH: src
+  GX_ANALYTICS_ENABLED: 'false'
+  DBT_SEND_ANONYMOUS_USAGE_STATS: 'false'
+
+jobs:
+  native:
+    name: 기본 로직
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      dbt: ${{ steps.scope.outputs.dbt }}
+      gx: ${{ steps.scope.outputs.gx }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - id: scope
+        env:
+          FORCE_INTEGRATIONS: ${{ inputs.run_integrations || false }}
+        run: python scripts/ci_scope.py
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q --tb=short --junitxml=data/native-tests.xml
+
+  dbt:
+    name: dbt 실제 검증
+    needs: native
+    if: needs.native.outputs.dbt == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-dbt.txt
+      - run: python -m pip install -r requirements-dev.txt -r requirements-dbt.txt
+      - run: python -m pytest tests/test_dbt_runtime.py tests/test_dbt_increment_runtime.py tests/test_dbt_increment_config_runtime.py tests/test_dbt_full_runtime.py -m dbt -q --tb=short --junitxml=data/dbt-tests.xml
+
+  gx:
+    name: GX 실제 검증
+    needs: native
+    if: needs.native.outputs.gx == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-gx.txt
+      - run: python -m pip install -r requirements-dev.txt -r requirements-gx.txt
+      - run: python -m pytest tests/test_gx_runtime.py -m gx -q --tb=short --junitxml=data/gx-tests.xml
