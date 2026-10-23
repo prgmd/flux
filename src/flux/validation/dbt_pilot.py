@@ -14,7 +14,7 @@ from flux.validation.pinning import sha256,verify_bundle
 
 SOURCES={'monthly':['user_name','recording_msid','listened_month'],'song_dimension':['recording_msid'],
          'song_labels':['song_key'],'song_credits':['song_key','artist_mbid']}
-MARTS={name:'monthly_'+name for name in KEYS}
+MARTS={period:{name:prefix+'_'+name for name in KEYS} for period,prefix in [('month','monthly'),('year','yearly')]}
 
 
 def save(root,result):
@@ -49,16 +49,18 @@ def bootstrap(baseline,output):
     verify_bundle(baseline);scope=context(baseline);before=sha256(baseline/'result.json')
     output.mkdir(parents=True,exist_ok=False);(output/'inputs').mkdir();(output/'expected').mkdir()
     for name in SOURCES:shutil.copyfile(baseline/'inputs'/(name+'.parquet'),output/'inputs'/(name+'.parquet'))
-    for name in MARTS:shutil.copyfile(baseline/'expected/month'/(name+'.parquet'),output/'expected'/(name+'.parquet'))
+    for period,names in MARTS.items():
+        (output/'expected'/period).mkdir()
+        for name in names:shutil.copyfile(baseline/'expected'/period/(name+'.parquet'),output/'expected'/period/(name+'.parquet'))
     with duckdb.connect(str(output/'pilot.duckdb')) as c:
         c.execute('set threads=2');c.execute("set memory_limit='2GB'")
         c.execute('create schema pinned')
         for name in SOURCES:c.execute('create table pinned.'+name+' as select * from read_parquet(?)',[str(output/'inputs'/(name+'.parquet'))])
     verify_bundle(baseline)
     if before!=sha256(baseline/'result.json'):raise ValueError('baseline changed during bootstrap')
-    info={'prepared':True,'production_applied':False,'scope':'fixed monthly sample, seven monthly marts only',
+    info={'prepared':True,'production_applied':False,'scope':'fixed sample, seven monthly and seven yearly marts',
           'baseline_path':str(baseline),'baseline_sha256':before,'context':scope,
-          'artifacts':{p.relative_to(output).as_posix():sha256(p) for d in ['inputs','expected'] for p in sorted((output/d).iterdir())}}
+          'artifacts':{p.relative_to(output).as_posix():sha256(p) for d in ['inputs','expected'] for p in sorted((output/d).rglob('*')) if p.is_file()}}
     (output/'inputs.json').write_text(json.dumps(info,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     save(output,{'completed':False,'production_applied':False,'input_manifest_sha256':sha256(output/'inputs.json')})
     return info
@@ -83,22 +85,24 @@ def compare_snapshot(root):
             saved[name]=rows(c,'read_parquet('+literal(root/'inputs'/(name+'.parquet'))+')')
             try:compare_rows(saved[name],rows(c,'pinned.'+name),keys)
             except ValueError as exc:raise ValueError('pinned source changed: '+name) from exc
-        expected=python_marts(saved['monthly'],saved['song_dimension'],saved['song_labels'],saved['song_credits'],'month')
         with duckdb.connect() as legacy:
             legacy.execute('set threads=2')
             for name in SOURCES:
                 legacy.execute('create table '+name+' as select * from read_parquet(?)',[str(root/'inputs'/(name+'.parquet'))])
-            build_period(legacy,'month')
             counts={}
-            for old,new in MARTS.items():
-                actual=rows(c,'analytics.'+new)
-                frozen=rows(c,'read_parquet('+literal(root/'expected'/(old+'.parquet'))+')')
-                for wanted in [frozen,expected[old],rows(legacy,old)]:compare_rows(wanted,actual,KEYS[old])
-                actual_schema=c.execute('describe analytics.'+new).fetchall()
-                frozen_schema=c.execute('describe select * from read_parquet(?)',[str(root/'expected'/(old+'.parquet'))]).fetchall()
-                if [(r[0],r[1]) for r in actual_schema]!=[(r[0],r[1]) for r in frozen_schema]:raise ValueError('mart column/type mismatch')
-                counts[new]=len(actual)
-        return {'tables_checked':len(MARTS),'mismatches':0,'checks_against':['frozen P0','Python oracle','legacy SQL'],
+            for period,names in MARTS.items():
+                expected=python_marts(saved['monthly'],saved['song_dimension'],saved['song_labels'],saved['song_credits'],period)
+                build_period(legacy,period)
+                for old,new in names.items():
+                    actual=rows(c,'analytics.'+new)
+                    path=root/'expected'/period/(old+'.parquet')
+                    frozen=rows(c,'read_parquet('+literal(path)+')')
+                    for wanted in [frozen,expected[old],rows(legacy,old)]:compare_rows(wanted,actual,KEYS[old])
+                    actual_schema=c.execute('describe analytics.'+new).fetchall()
+                    frozen_schema=c.execute('describe select * from read_parquet(?)',[str(path)]).fetchall()
+                    if [(r[0],r[1]) for r in actual_schema]!=[(r[0],r[1]) for r in frozen_schema]:raise ValueError('mart column/type mismatch')
+                    counts[new]=len(actual)
+        return {'tables_checked':len(counts),'mismatches':0,'checks_against':['frozen P0','Python oracle','legacy SQL'],
                 'table_rows':counts,'plays':sum(r['play_count'] for r in saved['monthly']),
                 'source_rows':len(saved['monthly']),'source_tables_unchanged':True,'float_tolerance':1e-12}
 
@@ -132,6 +136,8 @@ def artifacts(target):
               'monthly_variant_metrics':{'int_user_monthly_variants','monthly_coverage'},
               'monthly_listener_metrics':{'int_user_monthly_songs'},
               'monthly_identity_coverage':{'int_user_monthly_songs','stg_song_labels'}}
+    required.update({name.replace('monthly_','yearly_'):{p.replace('monthly_','yearly_') for p in parents}
+                     for name,parents in list(required.items())})
     for name,parents in required.items():
         node='model.flux_gold.'+name
         actual=set(manifest['nodes'][node]['depends_on']['nodes'])

@@ -12,7 +12,8 @@ from flux.validation.pinning import sha256
 
 @pytest.fixture
 def baseline(tmp_path):
-    root=tmp_path/'baseline';(root/'inputs').mkdir(parents=True);(root/'expected/month').mkdir(parents=True)
+    root=tmp_path/'baseline';(root/'inputs').mkdir(parents=True)
+    for period in ['month','year']:(root/'expected'/period).mkdir(parents=True)
     (root/'source_manifests').mkdir()
     with duckdb.connect() as c:
         c.execute("""create table reviewed as select * from(values
@@ -26,14 +27,15 @@ def baseline(tmp_path):
         c.execute("""create table monthly as select * from(values
             ('u1','s1','2026-01',2),('u1','s2','2026-01',3),('u2','s1','2026-01',1),
             ('u1','s1','2026-02',4),('u2','fast','2026-01',7),('u3','unknown','2026-01',1),
-            ('u1','s3','2026-01',4),('u3','s3','2026-01',2))
+            ('u1','s3','2026-01',4),('u3','s3','2026-01',2),('u2','s1','2027-01',3))
             t(user_name,recording_msid,listened_month,play_count)""")
         build_dimension(c)
         for name in ['monthly','song_dimension','song_labels','song_credits']:
             c.execute('copy '+name+' to ? (format parquet)',[str(root/'inputs'/(name+'.parquet'))])
-        build_period(c,'month')
-        for name in KEYS:
-            c.execute('copy '+name+' to ? (format parquet)',[str(root/'expected/month'/(name+'.parquet'))])
+        for period in ['month','year']:
+            build_period(c,period)
+            for name in KEYS:
+                c.execute('copy '+name+' to ? (format parquet)',[str(root/'expected'/period/(name+'.parquet'))])
     state={'source_id':'fixture','version':0,'minimum_ms_played':30000,'policy_version':1,
            'timezone':'UTC','key':['user_name','recording_msid','listened_month']}
     context={'r9_reference_only':True,'gold_policies':{'timezone':'UTC'},'tables':{'bronze':{'id':'fixture','version':0},
@@ -53,8 +55,9 @@ def pin(root):
 def populate_expected(root):
     with duckdb.connect(str(root/'pilot.duckdb')) as c:
         c.execute('create schema analytics')
-        for old,new in MARTS.items():
-            c.execute('create table analytics.'+new+' as select * from read_parquet(?)',[str(root/'expected'/(old+'.parquet'))])
+        for period,names in MARTS.items():
+            for old,new in names.items():
+                c.execute('create table analytics.'+new+' as select * from read_parquet(?)',[str(root/'expected'/period/(old+'.parquet'))])
 
 
 def test_bootstrap_copies_only_pinned_inputs_into_a_separate_database(baseline,tmp_path):
@@ -62,7 +65,7 @@ def test_bootstrap_copies_only_pinned_inputs_into_a_separate_database(baseline,t
     info=bootstrap(baseline,root)
     assert info['prepared'] is True and info['production_applied'] is False
     with duckdb.connect(str(root/'pilot.duckdb')) as c:
-        assert c.execute('select count(*),sum(play_count) from pinned.monthly').fetchone()==(8,24)
+        assert c.execute('select count(*),sum(play_count) from pinned.monthly').fetchone()==(9,27)
     assert sha256(root/'inputs/monthly.parquet')==sha256(baseline/'inputs/monthly.parquet')
     with pytest.raises(FileExistsError):bootstrap(baseline,root)
     with pytest.raises(ValueError):bootstrap(baseline,baseline/'nested')
@@ -90,7 +93,7 @@ def test_incompatible_context_is_rejected_before_writes(baseline,tmp_path,field,
 def test_frozen_and_python_expectations_detect_changed_rank_and_source(baseline,tmp_path):
     root=tmp_path/'output';bootstrap(baseline,root);populate_expected(root)
     result=compare_snapshot(root)
-    assert result['tables_checked']==7 and result['mismatches']==0
+    assert result['tables_checked']==14 and result['mismatches']==0
     with duckdb.connect(str(root/'pilot.duckdb')) as c:c.execute('update analytics.monthly_song_metrics set listener_rank=999')
     with pytest.raises(ValueError,match='listener_rank'):compare_snapshot(root)
     with duckdb.connect(str(root/'pilot.duckdb')) as c:
@@ -98,12 +101,13 @@ def test_frozen_and_python_expectations_detect_changed_rank_and_source(baseline,
     with pytest.raises(ValueError,match='source'):compare_snapshot(root)
 
 
-def test_all_seven_monthly_marts_are_copied_and_compared(baseline,tmp_path):
-    assert set(MARTS)==set(KEYS)
+def test_all_fourteen_period_marts_are_copied_and_compared(baseline,tmp_path):
+    assert set(MARTS)=={'month','year'}
+    assert all(set(names)==set(KEYS) for names in MARTS.values())
     root=tmp_path/'output';bootstrap(baseline,root);populate_expected(root)
-    assert len(list((root/'expected').glob('*.parquet')))==7
+    assert len(list((root/'expected').rglob('*.parquet')))==14
     result=compare_snapshot(root)
-    assert result['tables_checked']==7 and result['plays']==24
+    assert result['tables_checked']==14 and result['plays']==27
 
 
 @pytest.mark.parametrize('mart,column,value',[
@@ -113,11 +117,21 @@ def test_all_seven_monthly_marts_are_copied_and_compared(baseline,tmp_path):
     ('listener_metrics','song_count','999'),
     ('identity_coverage','listens','999'),
 ])
-def test_new_marts_are_compared_by_every_key_and_value(baseline,tmp_path,mart,column,value):
+@pytest.mark.parametrize('prefix',['monthly','yearly'])
+def test_new_marts_are_compared_by_every_key_and_value(baseline,tmp_path,mart,column,value,prefix):
     root=tmp_path/'output';bootstrap(baseline,root);populate_expected(root)
     with duckdb.connect(str(root/'pilot.duckdb')) as c:
-        c.execute('update analytics.monthly_'+mart+' set '+column+'='+value)
+        c.execute('update analytics.'+prefix+'_'+mart+' set '+column+'='+value)
     with pytest.raises(ValueError,match=column):compare_snapshot(root)
+
+
+def test_summing_monthly_listeners_is_rejected_for_yearly_results(baseline,tmp_path):
+    root=tmp_path/'output';bootstrap(baseline,root);populate_expected(root)
+    with duckdb.connect(str(root/'pilot.duckdb')) as c:
+        c.execute("""update analytics.yearly_song_metrics a set listeners=(
+            select sum(m.listeners) from analytics.monthly_song_metrics m
+            where date_trunc('year',m.period_start)=a.period_start and m.song_key=a.song_key)""")
+    with pytest.raises(ValueError,match='listeners'):compare_snapshot(root)
 
 
 def test_failed_dbt_execution_cannot_publish_a_completed_result(baseline,tmp_path,monkeypatch):

@@ -23,7 +23,18 @@ def drill(root):
            ('wrong_artist_song',"update analytics.monthly_artist_song_metrics set song_listen_share=0",'test','monthly_artist_song_reconciliation'),
            ('wrong_variant',"update analytics.monthly_variant_metrics set listen_share=0",'test','monthly_variant_reconciliation'),
            ('wrong_listener',"update analytics.monthly_listener_metrics set song_count=song_count+1",'test','monthly_listener_reconciliation'),
-           ('wrong_identity',"update analytics.monthly_identity_coverage set listens=listens+1",'test','monthly_identity_reconciliation')]
+           ('wrong_identity',"update analytics.monthly_identity_coverage set listens=listens+1",'test','monthly_identity_reconciliation'),
+           ('yearly_sum_monthly_listeners',"""update analytics.yearly_song_metrics a set listeners=(
+                select sum(m.listeners) from analytics.monthly_song_metrics m
+                where date_trunc('year',m.period_start)=a.period_start and m.song_key=a.song_key)""",'test','yearly_listener_counts'),
+           ('wrong_yearly_artist',"update analytics.yearly_artist_metrics set top_user_listens=top_user_listens+1",'test','yearly_artist_reconciliation'),
+           ('wrong_yearly_artist_song',"update analytics.yearly_artist_song_metrics set song_listen_share=0",'test','yearly_artist_song_reconciliation'),
+           ('wrong_yearly_variant',"update analytics.yearly_variant_metrics set listener_reach=0",'test','yearly_variant_reconciliation'),
+           ('wrong_yearly_listener',"update analytics.yearly_listener_metrics set song_count=song_count+1",'test','yearly_listener_reconciliation'),
+           ('yearly_sum_monthly_users',"""update analytics.yearly_coverage a set period_users=(
+                select sum(m.period_users) from analytics.monthly_coverage m
+                where date_trunc('year',m.period_start)=a.period_start)""",'test','yearly_listener_counts'),
+           ('wrong_yearly_identity',"update analytics.yearly_identity_coverage set listeners=listeners+1",'test','yearly_identity_reconciliation')]
     for name,sql,command,expected in cases:
         output=directory/name;output.mkdir()
         shutil.copyfile(root/'pilot.duckdb',output/'pilot.duckdb')
