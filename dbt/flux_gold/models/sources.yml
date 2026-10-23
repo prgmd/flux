@@ -3,7 +3,7 @@ sources:
   - name: pinned
     database: "{{ target.database }}"
     schema: pinned
-    description: "완료 지문을 확인한 P0 표본의 로컬 복사본. 원본 Delta를 직접 읽지 않는다."
+    description: "완료 지문을 확인한 고정 입력의 로컬 복사본. 원본 Delta를 직접 읽지 않는다."
     config:
       meta:
         baseline_sha256: "{{ env_var('FLUX_DBT_BASELINE_SHA256') }}"

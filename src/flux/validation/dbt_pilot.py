@@ -107,13 +107,14 @@ def compare_snapshot(root):
                 'source_rows':len(saved['monthly']),'source_tables_unchanged':True,'float_tolerance':1e-12}
 
 
-def invoke(root,project,command,*,tag=None):
+def invoke(root,project,command,*,tag=None,timeout=180):
     root,project=Path(root).resolve(),Path(project).resolve()
     info=json.loads((root/'inputs.json').read_text(encoding='utf-8'))
     tag=tag or '-'.join(command)
     target=root/('target-'+tag);logs=root/('logs-'+tag)
     env={**os.environ,'FLUX_DBT_DATABASE':(root/'pilot.duckdb').as_posix(),
          'FLUX_DBT_BASELINE_SHA256':info['baseline_sha256'],'DBT_SEND_ANONYMOUS_USAGE_STATS':'false',
+         'FLUX_DBT_TEMP_DIRECTORY':(root/'spill').as_posix(),
          'DBT_PARTIAL_PARSE':'false','DBT_USE_COLORS':'false','PYTHONIOENCODING':'utf-8'}
     args=[sys.executable,'-c','from dbt.cli.main import cli; cli()',
           '--log-path',str(logs),*command,
@@ -121,7 +122,7 @@ def invoke(root,project,command,*,tag=None):
     if command[0]!='debug':args+=['--target-path',str(target)]
     begin=time.perf_counter()
     with (root/(tag+'.log')).open('w',encoding='utf-8') as stream:
-        process=subprocess.run(args,env=env,cwd=root,stdout=stream,stderr=subprocess.STDOUT,timeout=180)
+        process=subprocess.run(args,env=env,cwd=root,stdout=stream,stderr=subprocess.STDOUT,timeout=timeout)
     return {'returncode':process.returncode,'seconds':round(time.perf_counter()-begin,3),'target':str(target),'log':tag+'.log'}
 
 

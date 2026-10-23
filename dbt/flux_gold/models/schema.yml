@@ -76,7 +76,7 @@ models:
       - name: plays
         data_tests: [positive_integer]
   - name: monthly_song_metrics
-    description: "UTC 월별 곡 지표. 순위는 고유 계정 수 기준 공동 순위이며 표본 안에서 다시 계산한다."
+    description: "UTC 월별 곡 지표. 순위는 고유 계정 수 기준 공동 순위이며 고정 입력 범위에서 다시 계산한다."
     config:
       meta: {rule_ids: [DQ010, DQ011, DQ012, DQ013]}
     data_tests:
@@ -120,7 +120,7 @@ models:
       - name: listen_rank
         description: "월별 청취 수 내림차순의 비교용 공동 순위."
   - name: monthly_coverage
-    description: "전체 표본 청취를 분모로 한 월별 공식 아티스트 귀속 범위. 공동 크레딧을 중복 가산하지 않는다."
+    description: "전체 입력 청취를 분모로 한 월별 공식 아티스트 귀속 범위. 공동 크레딧을 중복 가산하지 않는다."
     config:
       meta: {rule_ids: [DQ010, DQ011, DQ012]}
     columns:
@@ -448,7 +448,7 @@ models:
       data_tests:
       - positive_integer
   - name: yearly_song_metrics
-    description: UTC 연간 곡 지표. 순위는 고유 계정 수 기준 공동 순위이며 표본 안에서 다시 계산한다.
+    description: UTC 연간 곡 지표. 순위는 고유 계정 수 기준 공동 순위이며 고정 입력 범위에서 다시 계산한다.
     config:
       meta:
         rule_ids:
@@ -504,7 +504,7 @@ models:
     - name: listen_rank
       description: 연간 청취 수 내림차순의 비교용 공동 순위.
   - name: yearly_coverage
-    description: 전체 표본 청취를 분모로 한 연간 공식 아티스트 귀속 범위. 공동 크레딧을 중복 가산하지 않는다.
+    description: 전체 입력 청취를 분모로 한 연간 공식 아티스트 귀속 범위. 공동 크레딧을 중복 가산하지 않는다.
     config:
       meta:
         rule_ids:

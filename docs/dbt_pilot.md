@@ -90,4 +90,4 @@ venv/Scripts/python -m http.server 8088 --bind 127.0.0.1 \
 
 ## 남은 검증과 운영 확장
 
-월별 및 연간 14개 마트의 고정 표본 이전을 완료했다. 기존 전체 14개 Parquet 마트와 Python 생성기는 비교 기준으로 보존한다. 연간 지표를 사용자별 기여에서 다시 계산한 결과도 일치했다. 전체 Silver 규모의 별도 생성과 성능 및 대조도 남아 있다. Gold 증분 및 영향 기간 교체, GX와 서버형 카탈로그 연결, 운영 승격도 별도다. dbt 문서의 계보는 등록한 4개 source와 24개 모델 범위이며 외부 Spark와 검수 저널까지 자동 추적한 결과는 아니다. [첫 이전](measurements/2026-10-22-dbt-pilot.md), [월별 확대](measurements/2026-10-23-dbt-monthly.md)와 [연간 확대 실측](measurements/2026-10-23-dbt-yearly.md)을 구분한다.
+월별 및 연간 14개 마트의 고정 표본 이전을 완료했다. 기존 전체 14개 Parquet 마트와 Python 생성기는 비교 기준으로 보존한다. 연간 지표를 사용자별 기여에서 다시 계산한 결과도 일치했다. [전체 Silver의 별도 생성과 전수 대조](dbt_full.md)도 완료했고 기존 Gold 14개 Parquet의 SHA-256까지 일치했다. 실제 시간 및 용량과 실패 복구 경계는 [전체 실측](measurements/2026-10-23-dbt-full.md)을 따른다. Gold 증분 및 영향 기간 교체, GX와 서버형 카탈로그 연결, 운영 승격도 별도다. dbt 문서의 계보는 등록한 4개 source와 24개 모델 범위이며 외부 Spark와 검수 저널까지 자동 추적한 결과는 아니다. [첫 이전](measurements/2026-10-22-dbt-pilot.md), [월별 확대](measurements/2026-10-23-dbt-monthly.md)와 [연간 확대 실측](measurements/2026-10-23-dbt-yearly.md)을 구분한다.
