@@ -18,7 +18,7 @@ main의 push와 PR에서 코드 및 의존성 변경을 검사한다. 공통 소
 
 깨끗한 Python 3.14.6 환경에서 개발 의존성만 설치했을 때 PyYAML 누락으로 1개가 실패했다. 기존 개발 환경에는 dbt가 설치한 PyYAML이 있어 드러나지 않았던 문제다. requirements-dev.txt에 같은 6.0.3을 명시한 뒤 969 passed, 18 skipped, 12 deselected를 151.61초에 확인했다. skipped는 설치하지 않은 엔진 및 외부 의존의 범위이고, 실제 dbt와 GX 검사는 각 전용 작업으로 분리한다. 경로 선택 10개는 기본 테스트에 포함된다.
 
-이 수치는 Windows의 최소 환경 결과다. GitHub의 Linux 실행은 별도 확인하고 상태 문서에 기록한다. CI가 실제 대규모 Silver CDF와 Gold를 연결하거나 실제 7일 운영을 입증하는 것은 아니다.
+GitHub의 Linux 실행도 [성공했다](measurements/2026-10-23-ci.md). 기본 968 passed와 19 skipped, 실제 dbt 7 passed 및 GX 11 passed를 확인했다. 로컬의 실제 explorer 표본에 의존하는 한 검사는 GitHub에서 제외되므로 Windows의 기본 969개와 구분한다. CI가 실제 대규모 Silver CDF와 Gold를 연결하거나 실제 7일 운영을 입증하는 것은 아니다.
 
 로컬에서는 `python -m pytest -q`로 기본 검사를 실행한다. dbt 환경에서는 워크플로에 지정한 네 테스트 파일을 `-m dbt`로, GX 환경에서는 `tests/test_gx_runtime.py -m gx`로 실행한다. 설치와 실행 명령의 정본은 [.github/workflows/data-contracts.yml](../.github/workflows/data-contracts.yml)이다.
 
