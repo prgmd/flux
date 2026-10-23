@@ -1,3 +1,5 @@
+{{ flux_period_config('year') }}
+select * from (
 select s.*, c.artist_mbid, c.artist_name,
     s.listens::double / a.listens as song_listen_share,
     s.listeners::double / a.listeners as song_listener_reach,
@@ -6,3 +8,7 @@ from {{ ref('yearly_song_metrics') }} s
 join {{ ref('stg_song_credits') }} c using (song_key)
 join {{ ref('yearly_artist_metrics') }} a
     on s.period_start = a.period_start and c.artist_mbid = a.artist_mbid
+) as period_snapshot
+{% if var('flux_incremental', false) %}
+where period_start in ({{ flux_dates_sql('year') }})
+{% endif %}

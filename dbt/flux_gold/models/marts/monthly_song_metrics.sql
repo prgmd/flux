@@ -1,3 +1,5 @@
+{{ flux_period_config('month') }}
+select * from (
 with song_base as (
     select
         period_start,
@@ -19,3 +21,7 @@ select
     rank() over (partition by period_start order by listens desc) as listen_rank
 from song_base b
 join {{ ref('stg_song_labels') }} l using (song_key)
+) as period_snapshot
+{% if var('flux_incremental', false) %}
+where period_start in ({{ flux_dates_sql('month') }})
+{% endif %}

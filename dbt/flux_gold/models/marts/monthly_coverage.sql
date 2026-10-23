@@ -1,3 +1,5 @@
+{{ flux_period_config('month') }}
+select * from (
 select
     period_start,
     sum(plays)::bigint as period_listens,
@@ -10,3 +12,7 @@ from (
     from {{ ref('int_user_monthly_songs') }}
 )
 group by period_start
+) as period_snapshot
+{% if var('flux_incremental', false) %}
+where period_start in ({{ flux_dates_sql('month') }})
+{% endif %}
