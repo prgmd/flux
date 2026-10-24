@@ -28,3 +28,13 @@ GitHub의 Linux 실행도 [성공했다](measurements/2026-10-23-ci.md). 기본 
 ## 실제 CDF 연결 추가 후 자동 회귀
 
 코드 94f530f의 [실행 39912952332](https://github.com/prgmd/flux/actions/runs/39912952332)도 세 작업이 모두 성공했다. 기본 로직은 989 passed, 21 skipped, 12 deselected in 20.85s, dbt는 7 passed in 292.19s (0:04:52), GX는 11 passed in 11.76s다. Windows의 실제 explorer 표본 검사 한 개를 구분한다. 실제 CDF와 Gold의 연결 두 검사는 Spark 내보내기를 사용한 별도 로컬 통합이며 CI의 dbt 7개와 구분한다. [검증 범위](measurements/2026-10-23-silver-cdf-gold.md)를 따른다.
+
+
+## 전체 규모 CDF 검증기 추가 후 자동 검사
+
+코드 06fad80의 [실행 39924419907](https://github.com/prgmd/flux/actions/runs/39924419907)에서 기본 1,002 passed, 22 skipped, 12 deselected와 15.94초, dbt 7 passed와 327.15초, GX 11 passed와 11.71초를 확인했다. 전체 Silver와 실제 Spark 실험은 로컬 명시 실행이며 이 CI에 포함하지 않는다. [전체 규모 실측](measurements/2026-10-23-full-silver-cdf-gold.md)과 자동 회귀의 입력 범위를 구분한다.
+
+
+## 중단 복구 추가 후 자동 검사
+
+복구와 전원 요청을 보완한 코드 b709479의 [실행 40066890815](https://github.com/prgmd/flux/actions/runs/40066890815)에서 기본 1,017 passed, 22 skipped, 12 deselected와 17.00초, dbt 7 passed와 269.77초, GX 11 passed와 11.37초가 확인됐다. 새 복구 검사 12개와 전원 요청 검사 3개를 포함한다. 전체 Silver 대조는 로컬 명시 실행이며 이 CI에 포함하지 않는다.

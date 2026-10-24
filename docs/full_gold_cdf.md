@@ -57,3 +57,5 @@ PYTHONPATH=src python scripts/drills/full_gold_cdf.py resume-tests \
 복구 뒤 `elapsed_seconds`와 저장량 최대치는 복구 세션만 측정한다. 중단 전에 완료된 구간의 시간은 `seconds`에 유지하지만 전체 재계산의 연속 실행 시간은 복원하지 않는다. 이전 프로세스의 최대 임시 저장량도 알 수 없다. 이 수동 복구는 운영 자동 재시도나 모든 중단 지점을 포괄하는 복구 기능을 뜻하지 않는다.
 
 Windows에서는 실행 중 화면과 시스템의 활성 상태를 함께 요청하고 종료 시 해제한다. 전원 계획은 바꾸지 않는다. 요청 성공을 실제 비수면의 증거로 사용하지 않으며 전원 이벤트와 단계별 진행도 확인한다. 대기 구간이 있으면 총경과와 별도로 기록하고 순수 연산 시간으로 해석하지 않는다. 사용자 의도의 덮개 닫기나 전원 버튼 조작을 막는 기능은 아니다. [Windows 실행 상태 요청](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate)을 따른다.
+
+[전체 Silver 실행 결과와 한계](measurements/2026-10-23-full-silver-cdf-gold.md)를 따른다.
