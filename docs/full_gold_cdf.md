@@ -40,3 +40,18 @@ PYTHONPATH=src python scripts/drills/full_gold_cdf.py consume \
 ```
 
 기본 검사는 `tests/test_full_gold_cdf.py`, 실제 작은 Delta 검사는 `tests/test_spark_full_gold_cdf.py -m spark`다. 전체 실행은 수십 GB의 로컬 파일과 두 엔진이 필요한 별도 실험이며 CI에서 자동 실행하지 않는다. 소형 경로의 강제 종료 및 복구 검증은 [기존 실제 CDF 검증](silver_cdf_gold.md)에서 유지한다.
+
+## 전체 계산 중단 사본의 제한된 복구
+
+전체 재계산 도중 프로세스가 종료됐고 기존 프로세스가 없음을 확인한 경우 `resume-tests`를 사용할 수 있다. 완료된 증분 실행과 고정 CDF 및 입력, 실행 프로젝트의 지문이 유지돼야 한다. 시작 단계가 전체 dbt 실행이어야 하며 완료 처리 위치가 존재하거나 이미 복구를 시도한 사본은 거부한다. 이전 미완료 결과와 로그는 보존한다.
+
+```bash
+PYTHONPATH=src python scripts/drills/full_gold_cdf.py resume-tests \
+  --source data/new-full-cdf-source --output data/new-full-cdf-gold
+```
+
+로그에서 실제 성공한 모델 이름을 manifest와 대조한다. 프로젝트의 전체 모델 개수를 완료 개수로 해석하지 않는다. dbt build의 모델과 검사는 의존 관계에 따라 섞여 실행되므로 중단 시점에 미완료 모델이 남을 수 있다. 복구 경로는 완료된 모델을 재사용하고 미완료 모델을 전체 계산 방식으로 생성하며 검사 145개를 모두 다시 실행한다. 이전 검사 일부를 성공으로 재사용하지 않는다. 이어 두 DB의 입력 지문과 최종 14개 마트 및 영향 밖 기간을 확인하고 마지막에만 완료 위치를 저장한다.
+
+재사용 전에 전체 계산 DB의 입력을 고정 종료 Silver와 전수 대조한다. 실행된 SQL과 현재 사본의 SQL도 확인한다. dbt가 정리하는 바깥 공백과 Windows 줄바꿈 차이는 허용하며 SQL 내부의 로직 변경은 거부한다. `tests/test_full_cdf_recovery.py`는 완료 모델 추출, 오류 및 중복 로그, SQL 변경과 완료 상태 및 중복 복구 차단을 검사한다.
+
+복구 뒤 `elapsed_seconds`와 저장량 최대치는 복구 세션만 측정한다. 중단 전에 완료된 구간의 시간은 `seconds`에 유지하지만 전체 재계산의 연속 실행 시간은 복원하지 않는다. 이전 프로세스의 최대 임시 저장량도 알 수 없다. 이 수동 복구는 운영 자동 재시도나 모든 중단 지점을 포괄하는 복구 기능을 뜻하지 않는다.

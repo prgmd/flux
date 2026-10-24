@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import time
 from pathlib import Path
@@ -191,6 +192,89 @@ def build(root, project, impact=None):
     return dict(run,nodes={status:sum(node['status']==status for node in nodes) for status in ['success','pass']})
 
 
+def recovered_models(root):
+    root=Path(root)
+    manifest=json.loads((root/'target-build/manifest.json').read_text(encoding='utf-8'))
+    models={node['name']:node for node in manifest['nodes'].values() if node['resource_type']=='model'}
+    if len(models)!=24 or sum(node['resource_type']=='test' for node in manifest['nodes'].values())!=145:
+        raise ValueError('unexpected interrupted manifest')
+    log=(root/'build.log').read_text(encoding='utf-8')
+    if re.search(r'\b(ERROR|FAIL|WARN)\b',log):raise ValueError('unsuccessful interrupted build')
+    found=re.findall(r'OK created sql (?:table|view|incremental) model analytics\.([A-Za-z0-9_]+)\s+\.+ \[OK in ([0-9.]+)s\]',log)
+    if not found or len({name for name,_ in found})!=len(found) or not {name for name,_ in found}<=set(models):
+        raise ValueError('untrusted completed models')
+    return [dict(unique_id=models[name]['unique_id'],status='success',execution_time=float(seconds),evidence='interrupted build.log') for name,seconds in found]
+
+
+def verify_executed_sql(project,nodes):
+    for node in nodes:
+        path=node['original_file_path']
+        if path.endswith('.sql') and node['package_name']=='flux_gold':
+            actual=(Path(project)/path).read_text(encoding='utf-8').strip()
+            if node['raw_code'].replace('\r\n','\n').strip()!=actual:raise ValueError('executed model checksum changed')
+
+
+def resume_full_cdf(source, output, project):
+    source,output,project=map(lambda p:Path(p).resolve(),[source,output,project])
+    report=json.loads((output/'result.json').read_text(encoding='utf-8'))
+    if report.get('completed') or report.get('stage')!='dbt full rebuild and tests' or (output/'cursor.json').exists():
+        raise ValueError('closed interruption during full build required')
+    prior=output/'interrupted-result.json'
+    if prior.exists():raise ValueError('recovery already attempted')
+    models=recovered_models(output/'full')
+    info=json.loads((source/'result.json').read_text(encoding='utf-8'))
+    probe=json.loads((source/'probe/result.json').read_text(encoding='utf-8'))
+    if not info.get('completed') or not probe.get('completed') or sha256(source/'result.json')!=report['source_manifest_sha256'] or sha256(source/'probe/result.json')!=report['probe_manifest_sha256']:
+        raise ValueError('recovery source changed')
+    if file_hashes(source/'probe/cdf')!=probe['artifacts']:raise ValueError('CDF export changed')
+    before=pin_delta(source/'silver'/TABLE,report['source_versions']['before'])
+    after=pin_delta(source/'silver'/TABLE,report['source_versions']['after'])
+    if before!=info['before_pins'][TABLE] or before['id']!=after['id']:raise ValueError('recovery source history changed')
+    base=Path(info['base'])
+    for name,key in [('pilot.duckdb','base_database_sha256'),('result.json','base_result_sha256'),('inputs.json','base_inputs_sha256')]:
+        if sha256(base/name)!=info[key]:raise ValueError('recovery base changed')
+    check=output/('recovery-project-'+str(time.time_ns()))
+    configure_project(project,check,'16GB')
+    snapshot=project_hashes(check)
+    if any(snapshot!=project_hashes(output/label/'project') for label in ['increment','full']):raise ValueError('recovery model project changed')
+    manifest=json.loads((output/'full/target-build/manifest.json').read_text(encoding='utf-8'))
+    verify_executed_sql(output/'full/project',manifest['nodes'].values())
+    increment=json.loads((output/'increment/target-build/run_results.json').read_text(encoding='utf-8'))['results']
+    if len(increment)!=169 or any(node['status'] not in ['success','pass'] for node in increment):raise ValueError('unfinished increment build')
+    if not report.get('ending_input',{}).get('matches') or report.get('repeat_same_cursor',{}).get('cdf_rows')!=0:raise ValueError('unverified CDF input')
+    verify_sources(info['source'])
+    shutil.copyfile(output/'result.json',prior)
+    start=time.perf_counter();meter=DiskMeter(output);meter.thread.start();code=project_hashes(project)
+    report['recovery']=dict(reused_models=len(models),tests_rerun=145,prior_result_sha256=sha256(prior),model_evidence=models,interruption_cause='unknown',continuous_full_build_seconds=None)
+    report['timing_scope']='recovery session only; prior completed phase measurements retained separately'
+    report['peak_storage_scope']='recovery session only; original run peak unavailable'
+    def timed(stage,action):
+        report['stage']=stage;save(output,report);print(json.dumps(dict(stage=stage),ensure_ascii=False),flush=True)
+        begin=time.perf_counter();value=action();report['seconds'][stage]=round(time.perf_counter()-begin,3);save(output,report);return value
+    try:
+        report['sleep_prevention']=awake(True)
+        with connect(output/'full','16GB') as c:
+            monthly_view(c,'silver_after',after)
+            found=timed('recovery full input comparison',lambda:compare_relations(c,'pinned.monthly','silver_after',SOURCES['monthly'],'listened_month'))
+            if not found['matches']:raise ValueError('recovered input differs from ending Silver')
+            report['recovery']['full_input']=found
+            c.execute('checkpoint')
+        missing=sorted(node['name'] for node in manifest['nodes'].values() if node['resource_type']=='model' and node['unique_id'] not in {model['unique_id'] for model in models})
+        report['recovery']['rebuilt_models']=missing
+        run=timed('recovery full dbt build and tests',lambda:invoke(output/'full',output/'full/project',['build','--full-refresh','--select','resource_type:test',*missing],tag='recovery-build',timeout=28800))
+        nodes=json.loads((Path(run['target'])/'run_results.json').read_text(encoding='utf-8'))['results']
+        combined=models+nodes
+        if run['returncode']!=0 or len(combined)!=169 or len({node['unique_id'] for node in combined})!=169 or any(node['status'] not in ['pass','success'] for node in combined):raise ValueError('unsuccessful recovery build')
+        report['full_build']=dict(run,recovered=True,nodes={'success':24,'pass':145})
+        finish_full_cdf(source,output,project,info,probe,report,before,after,code,timed)
+    except Exception as error:
+        report.update(completed=False,failure=type(error).__name__+': '+str(error))
+    finally:
+        awake(False);meter.stop();report['peak_workspace_bytes']=meter.peak;report['sampled_peak_spill_bytes']=meter.spill_peak
+        report['elapsed_seconds']=round(time.perf_counter()-start,3);save(output,report)
+    return report
+
+
 def run_full_cdf(source, output, project):
     source,output,project=map(lambda p:Path(p).resolve(),[source,output,project])
     info=json.loads((source/'result.json').read_text(encoding='utf-8'))
@@ -243,49 +327,54 @@ def run_full_cdf(source, output, project):
             c.execute('checkpoint')
         report['increment_build']=timed('dbt increment build and tests',lambda:build(output/'increment',output/'increment/project',impact))
         report['full_build']=timed('dbt full rebuild and tests',lambda:build(output/'full',output/'full/project'))
-        for label in ['increment','full']:
-            with connect(output/label,'16GB') as c:
-                report[label+'_inputs']=timed(label+' input profiles',lambda:profiles(c))
-                for period,names in MARTS.items():
-                    (output/label/'marts'/period).mkdir(parents=True)
-                    for old,new in names.items():
-                        path=output/label/'marts'/period/(old+'.parquet')
-                        timed(label+' export '+new,lambda:c.execute('copy (select * from analytics.'+new+' order by '+ORDERS[old]+') to '+literal(path)+' (format parquet,compression zstd)'))
-                c.execute('checkpoint')
-        if report['increment_inputs']!=report['full_inputs']:raise ValueError('source profiles differ')
-        with connect(output/'increment','16GB') as c:
-            for period,names in MARTS.items():
-                for old,new in names.items():
-                    left=output/'increment/marts'/period/(old+'.parquet');right=output/'full/marts'/period/(old+'.parquet')
-                    c.execute('create or replace temp view final_actual as select * from read_parquet('+literal(left)+')')
-                    c.execute('create or replace temp view final_expected as select * from read_parquet('+literal(right)+')')
-                    found=timed('compare '+new,lambda:compare_relations(c,'final_actual','final_expected',KEYS[old],'period_start'))
-                    report['comparisons'][new]=found
-                    if not found['matches']:raise ValueError('full mart mismatch: '+new)
-                    values=impact['months'] if period=='month' else impact['years']
-                    excluded=','.join(literal(value+('-01' if period=='month' else '-01-01'))+'::date' for value in values)
-                    old_path=base/'marts'/period/(old+'.parquet')
-                    c.execute('create or replace temp view untouched_actual as select * from final_actual where period_start not in ('+excluded+')')
-                    c.execute('create or replace temp view untouched_expected as select * from read_parquet('+literal(old_path)+') where period_start not in ('+excluded+')')
-                    untouched=timed('untouched '+new,lambda:compare_relations(c,'untouched_actual','untouched_expected',KEYS[old],'period_start'))
-                    report.setdefault('untouched',{})[new]=untouched
-                    if not untouched['matches']:raise ValueError('unaffected period changed: '+new)
-        timed('verify originals after run',lambda:verify_sources(info['source']))
-        if any(file_hashes(Path(info['source']['tables'][name]['path']))!=info['original_silver_hashes'][name] for name in NAMES):raise ValueError('original Silver files changed')
-        if sha256(base/'pilot.duckdb')!=info['base_database_sha256']:raise ValueError('original base DB changed')
-        if code!=project_hashes(project):raise ValueError('model project changed')
-        for name in NAMES:check_pin(pin_delta(source/'silver'/name,probe['after_versions'][name]))
-        if sha256(source/'result.json')!=report['source_manifest_sha256'] or sha256(source/'probe/result.json')!=report['probe_manifest_sha256'] or file_hashes(source/'probe/cdf')!=probe['artifacts']:raise ValueError('source export changed')
-        report['storage']={label:dict(database_bytes=(output/label/'pilot.duckdb').stat().st_size,marts_bytes=sum(p.stat().st_size for p in (output/label/'marts').rglob('*.parquet'))) for label in ['increment','full']}
-        report['storage']['silver_before_bytes']=sum(file['bytes'] for file in before['files'])
-        report['storage']['silver_after_active_bytes']=sum(file['bytes'] for file in after['files'])
-        report['storage']['silver_with_history_bytes']=sum(p.stat().st_size for p in (source/'silver').rglob('*') if p.is_file())
-        report['storage']['cdf_bytes']=sum(p.stat().st_size for p in (source/'probe/cdf').rglob('*.parquet'))
-        report['mart_sha256']={label:file_hashes(output/label/'marts') for label in ['increment','full']}
-        (output/'cursor.json').write_text(json.dumps(dict(source=str(source/'silver'),source_id=after['id'],version=after['version'],log_sha256=after['log_sha256'],project_sha256=code),indent=2)+'\n',encoding='utf-8')
-        report.update(completed=True,source_unchanged=True,base_unchanged=True,model_unchanged=True,stage='completed',cursor_sha256=sha256(output/'cursor.json'))
+        finish_full_cdf(source,output,project,info,probe,report,before,after,code,timed)
     except Exception as error:
         report.update(completed=False,failure=type(error).__name__+': '+str(error))
     finally:
         awake(False);meter.stop();report['peak_workspace_bytes']=meter.peak;report['sampled_peak_spill_bytes']=meter.spill_peak;report['elapsed_seconds']=round(time.perf_counter()-start,3);save(output,report)
     return report
+
+
+def finish_full_cdf(source,output,project,info,probe,report,before,after,code,timed):
+    base=Path(info['base']);impact=report['impact']
+    for label in ['increment','full']:
+        with connect(output/label,'16GB') as c:
+            report[label+'_inputs']=timed(label+' input profiles',lambda:profiles(c))
+            for period,names in MARTS.items():
+                (output/label/'marts'/period).mkdir(parents=True)
+                for old,new in names.items():
+                    path=output/label/'marts'/period/(old+'.parquet')
+                    timed(label+' export '+new,lambda:c.execute('copy (select * from analytics.'+new+' order by '+ORDERS[old]+') to '+literal(path)+' (format parquet,compression zstd)'))
+            c.execute('checkpoint')
+    if report['increment_inputs']!=report['full_inputs']:raise ValueError('source profiles differ')
+    with connect(output/'increment','16GB') as c:
+        for period,names in MARTS.items():
+            for old,new in names.items():
+                left=output/'increment/marts'/period/(old+'.parquet');right=output/'full/marts'/period/(old+'.parquet')
+                c.execute('create or replace temp view final_actual as select * from read_parquet('+literal(left)+')')
+                c.execute('create or replace temp view final_expected as select * from read_parquet('+literal(right)+')')
+                found=timed('compare '+new,lambda:compare_relations(c,'final_actual','final_expected',KEYS[old],'period_start'))
+                report['comparisons'][new]=found
+                if not found['matches']:raise ValueError('full mart mismatch: '+new)
+                values=impact['months'] if period=='month' else impact['years']
+                excluded=','.join(literal(value+('-01' if period=='month' else '-01-01'))+'::date' for value in values)
+                old_path=base/'marts'/period/(old+'.parquet')
+                c.execute('create or replace temp view untouched_actual as select * from final_actual where period_start not in ('+excluded+')')
+                c.execute('create or replace temp view untouched_expected as select * from read_parquet('+literal(old_path)+') where period_start not in ('+excluded+')')
+                untouched=timed('untouched '+new,lambda:compare_relations(c,'untouched_actual','untouched_expected',KEYS[old],'period_start'))
+                report.setdefault('untouched',{})[new]=untouched
+                if not untouched['matches']:raise ValueError('unaffected period changed: '+new)
+    timed('verify originals after run',lambda:verify_sources(info['source']))
+    if any(file_hashes(Path(info['source']['tables'][name]['path']))!=info['original_silver_hashes'][name] for name in NAMES):raise ValueError('original Silver files changed')
+    if sha256(base/'pilot.duckdb')!=info['base_database_sha256']:raise ValueError('original base DB changed')
+    if code!=project_hashes(project):raise ValueError('model project changed')
+    for name in NAMES:check_pin(pin_delta(source/'silver'/name,probe['after_versions'][name]))
+    if sha256(source/'result.json')!=report['source_manifest_sha256'] or sha256(source/'probe/result.json')!=report['probe_manifest_sha256'] or file_hashes(source/'probe/cdf')!=probe['artifacts']:raise ValueError('source export changed')
+    report['storage']={label:dict(database_bytes=(output/label/'pilot.duckdb').stat().st_size,marts_bytes=sum(p.stat().st_size for p in (output/label/'marts').rglob('*.parquet'))) for label in ['increment','full']}
+    report['storage']['silver_before_bytes']=sum(file['bytes'] for file in before['files'])
+    report['storage']['silver_after_active_bytes']=sum(file['bytes'] for file in after['files'])
+    report['storage']['silver_with_history_bytes']=sum(p.stat().st_size for p in (source/'silver').rglob('*') if p.is_file())
+    report['storage']['cdf_bytes']=sum(p.stat().st_size for p in (source/'probe/cdf').rglob('*.parquet'))
+    report['mart_sha256']={label:file_hashes(output/label/'marts') for label in ['increment','full']}
+    (output/'cursor.json').write_text(json.dumps(dict(source=str(source/'silver'),source_id=after['id'],version=after['version'],log_sha256=after['log_sha256'],project_sha256=code),indent=2)+'\n',encoding='utf-8')
+    report.update(completed=True,source_unchanged=True,base_unchanged=True,model_unchanged=True,stage='completed',cursor_sha256=sha256(output/'cursor.json'))
