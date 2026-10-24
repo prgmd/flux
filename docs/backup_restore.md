@@ -55,6 +55,8 @@ Docker 엔진은 Inference 소켓 초기화 오류로 준비되지 않았다. �
 
 로컬 기본 전체 회귀는 1,060 passed, 22 skipped, 12 deselected in 134.58s였다. 별도 Delta 환경의 검사는 이 기본 통과 수에 합치지 않는다. 기존 미추적 조사 초안과 실제 표본 유무 때문에 깨끗한 CI의 수와 구분한다.
 
+[원격 CI 실행](https://github.com/prgmd/flux/actions/runs/40076870803)은 기본 1,056 passed와 23 skipped 및 12 deselected가 24.46초에, dbt 7개가 168.80초에, GX 11개가 11.69초에 통과했다. Delta 복원 엔진 검사는 전용 의존성을 설치한 로컬 환경에서 명시 실행했으며 기본 CI에서 skip된 것을 통과로 합치지 않았다.
+
 ## 재현
 
 Python 환경에 기본 개발 의존성을 설치하고 실제 Delta 읽기용 환경에는 `requirements-restore.txt`를 추가한다. 아래는 Git Bash에서 별도 표본 경로만 사용하는 예시다.
@@ -72,4 +74,4 @@ python -m pytest tests/test_snapshot_backup.py -q
 python -m pytest tests/test_delta_restore_runtime.py -m delta_restore -q
 ```
 
-세 실행은 [실행 기록](execution_records.md)에 입력과 단계 및 오류를 남긴다. 원본 덤프나 전체 Gold, dbt 환경과 서비스의 복구는 포함하지 않는다. 같은 로컬 디스크의 새 경로 검증이므로 별도 매체 및 호스트 장애 대비나 백업 보존 기간과 RPO/RTO 목표를 확정한 결과도 아니다. 실제 대형 백업의 매체와 보존 및 복구 시간은 별도 결정한다. P6a의 작은 독립 복원 확인 뒤 다음 기능 단위는 P6b의 dbt 문서와 데이터 카탈로그 연결이며 운영 추적의 남은 범위도 유지한다.
+세 실행은 [실행 기록](execution_records.md)에 입력과 단계 및 오류를 남긴다. 원본 덤프나 전체 Gold, dbt 환경과 서비스의 복구는 포함하지 않는다. 같은 로컬 디스크의 새 경로 검증이므로 별도 매체 및 호스트 장애 대비나 백업 보존 기간, 허용할 데이터 손실 구간과 목표 복구 시간을 확정한 결과도 아니다. 실제 대형 백업의 매체와 보존 및 복구 시간은 별도 결정한다. P6a의 작은 독립 복원 확인 뒤 다음 기능 단위는 P6b의 dbt 문서와 데이터 카탈로그 연결이며 운영 추적의 남은 범위도 유지한다.

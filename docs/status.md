@@ -20,7 +20,7 @@
 | P3 dbt 전체 검증 | 전체 Silver 80,563,985행과 157,351,363회에서 14개 별도 마트 생성, 모든 키와 값 및 Parquet SHA-256 일치, 실패 복구 후 모델 24개와 검사 145개 통과 | 실제 새 덤프의 연속 갱신 및 운영 승격 |
 | P4 GX 고정 표본 | 6,469행의 실제 GX 12개와 독립 계약, 오류 및 변조 6건 차단, 회귀 66개와 GX 통합 11개 통과 | 실제 운영과 대규모 엔진, 경고 보정 |
 | P5 실제 Silver CDF 연결 | [소형 실제 CDF](measurements/2026-10-23-silver-cdf-gold.md)의 9개 시나리오 및 두 종료 복구, [전체 Silver 통제 변경](measurements/2026-10-23-full-silver-cdf-gold.md)의 80,563,985행과 실제 CDF 6행에서 Gold 14개 및 영향 밖 전수 대조 일치, 시간과 저장량 확인 | 새 덤프 전체와 대량 변경, 운영 연결 및 버전 고정 매핑 확장 |
-| P6a CI | [실행 기록 추가 뒤 GitHub 실행](https://github.com/prgmd/flux/actions/runs/40072185690)의 기본 1,036개, dbt 7개 및 GX 11개 통과 | 브랜치 보호 및 보존 목표 |
+| P6a CI | [독립 복원 추가 뒤 GitHub 실행](https://github.com/prgmd/flux/actions/runs/40076870803)의 기본 1,056개, dbt 7개 및 GX 11개 통과 | 브랜치 보호 및 보존 목표 |
 | P6a 실행 기록 | [dbt와 CDF의 실행별 기록](execution_records.md), 버전과 단계 및 처리량, 경과 시간과 오류 및 디스크 측정 저장 | 보존 정책, 신선도 및 알림과 Spark 단계 통합 |
 | P6a 작은 독립 복원 | [네 Delta 표와 이력 및 처리 위치, 규칙과 승인 파일 복원](backup_restore.md), 월별 256키와 258회 및 모든 컬럼 일치, 과거 버전과 CDF 실제 읽기 | 별도 매체 및 대규모 백업, 보존 기간 및 목표와 전체 서비스 복구 |
 
