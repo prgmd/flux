@@ -8,11 +8,13 @@ pytest.importorskip('dbt.cli.main')
 from test_dbt_pilot import baseline
 from flux.validation.dbt_pilot import bootstrap,execute
 from flux.validation.dbt_drill import drill
+from flux.common.execution import inspect_run
 
 pytestmark=pytest.mark.dbt
 
 
-def test_real_dbt_preserves_semantics_and_rejects_injected_data_errors(baseline,tmp_path):
+def test_real_dbt_preserves_semantics_and_rejects_injected_data_errors(baseline,tmp_path,monkeypatch):
+    logs=tmp_path/'executions';monkeypatch.setenv('FLUX_EXECUTION_ROOT',str(logs))
     root=tmp_path/'pilot';bootstrap(baseline,root)
     result=execute(root,Path(__file__).resolve().parents[1]/'dbt/flux_gold')
     assert result['completed'] is True,result.get('failure')
@@ -22,6 +24,15 @@ def test_real_dbt_preserves_semantics_and_rejects_injected_data_errors(baseline,
     assert result['documentation']['mart_lineage_checked']==14
     assert result['build_nodes']['success']==24
     assert result['build_nodes']['pass']>140
+    journals=list(logs.glob('*.sqlite3'));assert len(journals)==1
+    execution=inspect_run(journals[0])
+    assert execution['status']=='succeeded'
+    assert execution['inputs']['context']['source_state']['version']==0
+    assert execution['metrics']['final_comparison']['tables_checked']==14
+    assert execution['metrics']['final_comparison']['plays']==27
+    assert [e['stage'] for e in execution['events'] if e['kind']=='stage_finished']==[
+        'dbt debug','dbt build','dbt rebuild','dbt docs','final comparison']
+    assert len([e for e in execution['events'] if e['kind']=='progress'])==8
     with duckdb.connect(str(root/'pilot.duckdb'),read_only=True) as c:
         assert c.execute("select listens,listeners,top_user_listens from analytics.monthly_song_metrics where song_key='mbid:r' and period_start='2026-01-01'").fetchone()==(6,2,5)
         assert c.execute("select period_listens,linked_listens,period_users,linked_users from analytics.monthly_coverage where period_start='2026-01-01'").fetchone()==(20,12,3,3)

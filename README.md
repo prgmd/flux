@@ -47,7 +47,7 @@ ListenBrainz의 실제 청취 기록과 MusicBrainz의 아티스트 메타데이
 | --- | --- | --- |
 | 표본 완료 | GX 품질 검사 | 6,469행과 오류 및 변조 6건에서 결과 전환 차단 |
 | 사본 검증 완료 | Gold 증분 | 소형 9개 시나리오와 전체 Silver 8,056만 행의 통제 CDF, 14개 전수 대조와 시간 및 저장량 확인 |
-| 진행 | 관측, CI와 복원 | GitHub의 기본 1,017개와 dbt 7개 및 GX 11개 통과, 관측과 독립 복원은 후속 |
+| 진행 | 관측, CI와 복원 | CI 유지, dbt와 CDF의 실행 및 중단 기록 저장 구현, 독립 복원은 후속 |
 | 3 | 카탈로그와 Airflow | 데이터 계보 및 검사 이력, 재시도와 과거 구간 재처리 |
 | 4 | 7일 실제 운영 | 새 입력 연속성, 중단 복구와 시간 및 저장량 실측 |
 | 선택 | 클라우드 데이터 창고 | 작은 집계의 조회 결과 및 비용 확인 |
@@ -227,4 +227,5 @@ Delta Lake 기반 [Medallion Architecture](https://learn.microsoft.com/ko-kr/azu
 | [중복 제거](docs/deduplication.md) | 동일 청취에서 남길 행의 결정 규칙 |
 | [파티션 설계](docs/partitioning.md) | 월 단위 파티션을 선택한 근거 |
 | [보존 정책](docs/retention.md) | Delta 로그와 파일의 보존 |
+| [실행 기록](docs/execution_records.md) | 입력 버전, 단계 상태와 중단 후 진행 확인 |
 | [실측 기록](docs/measurements/) | 최적화와 장애 실험의 결과 및 재현 근거 |

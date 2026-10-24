@@ -11,6 +11,7 @@ from flux.validation.dbt_pilot import MARTS, SOURCES, invoke, save
 from flux.validation.oracle import KEYS
 from flux.validation.pinning import check_pin, pin_delta, sha256, verify_bundle
 from flux.validation.silver_cdf_export import COLUMNS, NAMES, TABLE
+from flux.common.execution import recorded, record_inputs, progress as execution_progress
 
 
 def compare_relations(c, actual, expected, keys, period, progress=None):
@@ -25,7 +26,11 @@ def compare_relations(c, actual, expected, keys, period, progress=None):
         result['matches'] &= found['matches']
         for key in ['rows','expected_rows','missing','extra']:result[key]+=found[key]
         for key,count in found['columns'].items():result['columns'][key]=result['columns'].get(key,0)+count
-        if progress and (index%25==0 or index==len(dates)-1):progress(dict(periods_checked=index+1,periods=len(dates)))
+        if index%25==0 or index==len(dates)-1:
+            measured=dict(periods_checked=index+1,periods=len(dates),rows_checked=result['rows'],
+                          expected_rows_checked=result['expected_rows'],table=actual)
+            execution_progress(measured)
+            if progress:progress(measured)
     return result
 
 
@@ -214,6 +219,7 @@ def verify_executed_sql(project,nodes):
             if node['raw_code'].replace('\r\n','\n').strip()!=actual:raise ValueError('executed model checksum changed')
 
 
+@recorded('full-cdf-resume')
 def resume_full_cdf(source, output, project):
     source,output,project=map(lambda p:Path(p).resolve(),[source,output,project])
     report=json.loads((output/'result.json').read_text(encoding='utf-8'))
@@ -229,6 +235,8 @@ def resume_full_cdf(source, output, project):
     if file_hashes(source/'probe/cdf')!=probe['artifacts']:raise ValueError('CDF export changed')
     before=pin_delta(source/'silver'/TABLE,report['source_versions']['before'])
     after=pin_delta(source/'silver'/TABLE,report['source_versions']['after'])
+    record_inputs({'silver_before':{k:before[k] for k in ['id','version','log_sha256']},
+                   'silver_after':{k:after[k] for k in ['id','version','log_sha256']}})
     if before!=info['before_pins'][TABLE] or before['id']!=after['id']:raise ValueError('recovery source history changed')
     base=Path(info['base'])
     for name,key in [('pilot.duckdb','base_database_sha256'),('result.json','base_result_sha256'),('inputs.json','base_inputs_sha256')]:
@@ -275,6 +283,7 @@ def resume_full_cdf(source, output, project):
     return report
 
 
+@recorded('full-cdf-gold')
 def run_full_cdf(source, output, project):
     source,output,project=map(lambda p:Path(p).resolve(),[source,output,project])
     info=json.loads((source/'result.json').read_text(encoding='utf-8'))
@@ -287,6 +296,9 @@ def run_full_cdf(source, output, project):
     for name in NAMES:check_pin(info['before_pins'][name]) if name!=TABLE else None
     before=pin_delta(source/'silver'/TABLE,probe['before_versions'][TABLE])
     after=pin_delta(source/'silver'/TABLE,probe['after_versions'][TABLE])
+    record_inputs({'silver_before':{k:before[k] for k in ['id','version','log_sha256']},
+                   'silver_after':{k:after[k] for k in ['id','version','log_sha256']},
+                   'silver_table_versions':{'before':probe['before_versions'],'after':probe['after_versions']}})
     if before!=info['before_pins'][TABLE] or before['id']!=after['id']:raise ValueError('source history changed')
     if sha256(base/'pilot.duckdb')!=info['base_database_sha256'] or sha256(base/'result.json')!=info['base_result_sha256'] or sha256(base/'inputs.json')!=info['base_inputs_sha256']:raise ValueError('base snapshot changed')
     output.mkdir(parents=True,exist_ok=False);start=time.perf_counter();meter=DiskMeter(output);meter.thread.start()

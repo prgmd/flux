@@ -9,6 +9,7 @@ from flux.gold.monthly_marts import literal
 from flux.validation.dbt_pilot import MARTS,SOURCES,artifacts,context,invoke,save
 from flux.validation.oracle import KEYS
 from flux.validation.pinning import check_pin,sha256,verify_bundle
+from flux.common.execution import current, recorded, record_inputs, progress as execution_progress
 
 ORDERS={'song_metrics':'period_start,listener_rank,song_name,song_key',
         'artist_metrics':'period_start,listener_rank,artist_name,artist_mbid',
@@ -166,13 +167,18 @@ def compare_exports(c,actual,expected,keys,progress=None):
         result['matches']&=found['matches']
         for key in ['rows','expected_rows','missing','extra']:result[key]+=found[key]
         for key,count in found['columns'].items():result['columns'][key]=result['columns'].get(key,0)+count
-        if progress and (index%25==0 or index==len(dates)-1):progress({'periods_checked':index+1,'periods':len(dates)})
+        if index%25==0 or index==len(dates)-1:
+            measured={'periods_checked':index+1,'periods':len(dates),'rows_checked':result['rows'],
+                      'expected_rows_checked':result['expected_rows'],'table':str(actual)}
+            execution_progress(measured)
+            if progress:progress(measured)
     return result
 
 
 class DiskMeter:
     def __init__(self,root):
         self.root=Path(root);self.stopped=threading.Event();self.peak=0;self.spill_peak=0
+        self.recorder=current();self.recording_error=None
         self.thread=threading.Thread(target=self.run,daemon=True)
 
     def sample(self):
@@ -184,12 +190,16 @@ class DiskMeter:
                     if 'spill' in path.relative_to(self.root).parts:spill+=size
             except OSError:pass
         self.peak=max(self.peak,total);self.spill_peak=max(self.spill_peak,spill)
+        if self.recorder is not None:
+            try:self.recorder.sample(dict(workspace_bytes=total,spill_bytes=spill))
+            except Exception as error:self.recording_error=error;self.stopped.set()
 
     def run(self):
         while not self.stopped.wait(5):self.sample()
 
     def stop(self):
         self.stopped.set();self.thread.join();self.sample()
+        if self.recording_error is not None:raise self.recording_error
 
 
 def awake(enabled):
@@ -199,10 +209,13 @@ def awake(enabled):
     return bool(ctypes.windll.kernel32.SetThreadExecutionState(0x80000003 if enabled else 0x80000000))
 
 
+@recorded('dbt-full')
 def run_full(baseline,output,project,reuse=None,resume_failed=False,memory_limit='8GB'):
     baseline,output,project=map(lambda p:Path(p).resolve(),[baseline,output,project])
     verify_bundle(baseline);scope=context(baseline)
     source=json.loads((baseline/'source_context.json').read_text(encoding='utf-8'))
+    record_inputs({'silver_tables':{name:{key:table[key] for key in ['id','version'] if key in table}
+                   for name,table in source['tables'].items()},'baseline_sha256':sha256(baseline/'result.json')})
     gold=Path(source['source_gold'])
     separate_output(output,[baseline,gold,Path(source['audit']),*[t['path'] for t in source['tables'].values()]])
     output.mkdir(parents=True,exist_ok=False)

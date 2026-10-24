@@ -13,6 +13,7 @@ from flux.validation.oracle import KEYS
 from flux.validation.pinning import sha256, verify_bundle
 from flux.validation.silver_cdf_export import KIND as EXPORT_KIND, NAMES, TABLE
 from flux.silver.quality import MIN_MS_PLAYED
+from flux.common.execution import recorded
 
 KIND = "bounded-silver-cdf-gold-v1"
 FIELDS = ("user_name", "recording_msid", "listened_month", "play_count")
@@ -198,6 +199,7 @@ def seed_baseline(root, data, state):
                for path in root.rglob("*") if path.is_file()}))
 
 
+@recorded('silver-cdf-gold')
 def run(exported, output, project, *, previous=None, reference=None, crash=None):
     exported, output, project = map(lambda value: Path(value).resolve(), [exported, output, project])
     if (previous is None) == (reference is None):
@@ -238,11 +240,15 @@ def run(exported, output, project, *, previous=None, reference=None, crash=None)
     output.mkdir(parents=True, exist_ok=False)
     report = dict(completed=False, kind=KIND, production_applied=False, promotion_ready=False, already_consumed=already_consumed,
                   source_cursor=incoming["source_cursor"], project_sha256=code, rules_sha256=rules,
+                  stage="prepare CDF Gold inputs", cdf_rows=len(payload["cdf"]),
+                  cdf_actions=dict(Counter(row["_change_type"] for row in payload["cdf"])),
                   previous={"path": str(parent), "result_sha256": parent_digest},
                   scope="bounded actual Silver CDF; no operating data promotion")
     save(output, report)
     try:
         shutil.copytree(exported, output / "cdf")
+        report["stage"] = "build CDF Gold"
+        save(output, report)
         if previous is None:
             seed_baseline(output / "baseline", next_data, incoming["source_cursor"]["state"])
             bootstrap(output / "baseline", output / "gold")
@@ -252,6 +258,8 @@ def run(exported, output, project, *, previous=None, reference=None, crash=None)
                             crash_after_build=crash == "after-build")
         if result["completed"] is not True:
             raise ValueError("Gold build did not complete: " + str(result.get("failure")))
+        report["stage"] = "verify CDF Gold and publish cursor"
+        save(output, report)
         if crash == "before-cursor":
             os._exit(86)
         (output / "cursor.json").write_text(json.dumps(incoming["source_cursor"], ensure_ascii=False) + "\n", encoding="utf-8")

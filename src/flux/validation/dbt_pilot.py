@@ -11,6 +11,7 @@ from flux.gold.monthly_marts import build_period,literal
 from flux.validation.baseline import rows
 from flux.validation.oracle import KEYS,compare_rows,python_marts
 from flux.validation.pinning import sha256,verify_bundle
+from flux.common.execution import checkpoint, progress, recorded, record_inputs
 
 SOURCES={'monthly':['user_name','recording_msid','listened_month'],'song_dimension':['recording_msid'],
          'song_labels':['song_key'],'song_credits':['song_key','artist_mbid']}
@@ -21,6 +22,7 @@ def save(root,result):
     root=Path(root);temp=root/'result.tmp'
     temp.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     temp.replace(root/'result.json')
+    checkpoint(root,result)
 
 
 def context(baseline):
@@ -121,9 +123,12 @@ def invoke(root,project,command,*,tag=None,timeout=180):
           '--project-dir',str(project),'--profiles-dir',str(project)]
     if command[0]!='debug':args+=['--target-path',str(target)]
     begin=time.perf_counter()
+    progress({'dbt_command':command,'status':'started','log':str(root/(tag+'.log'))})
     with (root/(tag+'.log')).open('w',encoding='utf-8') as stream:
         process=subprocess.run(args,env=env,cwd=root,stdout=stream,stderr=subprocess.STDOUT,timeout=timeout)
-    return {'returncode':process.returncode,'seconds':round(time.perf_counter()-begin,3),'target':str(target),'log':tag+'.log'}
+    result={'returncode':process.returncode,'seconds':round(time.perf_counter()-begin,3),'target':str(target),'log':tag+'.log'}
+    progress({'dbt_command':command,'status':'finished',**result})
+    return result
 
 
 def artifacts(target):
@@ -152,6 +157,7 @@ def artifacts(target):
             'catalog_models':len(catalog['nodes']),'docs_generated':True}
 
 
+@recorded('dbt-sample')
 def execute(root,project):
     root,project=Path(root).resolve(),Path(project).resolve()
     report=json.loads((root/'result.json').read_text(encoding='utf-8'))
@@ -159,6 +165,7 @@ def execute(root,project):
     save(root,report)
     try:
         info=verify_inputs(root)
+        record_inputs({'baseline_sha256':info['baseline_sha256'],'context':info['context']})
         if report['input_manifest_sha256']!=sha256(root/'inputs.json'):raise ValueError('input manifest changed')
         snapshot=root/'project';shutil.copytree(project,snapshot)
         source_hashes={p.relative_to(snapshot).as_posix():sha256(p) for p in snapshot.rglob('*') if p.is_file()}
@@ -168,6 +175,7 @@ def execute(root,project):
             except PackageNotFoundError:report.setdefault('runtime',{})[name]=None
         report['runtime']['python']=sys.version.split()[0]
         for tag,command in [('debug',['debug']),('build',['build']),('rebuild',['build']),('docs',['docs','generate'])]:
+            report['stage']='dbt '+tag;save(root,report)
             stage=invoke(root,snapshot,command,tag=tag);report['commands'][tag]=stage;save(root,report)
             if stage['returncode']!=0:raise ValueError('dbt command failed: '+tag)
             if tag in ('build','rebuild'):
@@ -176,6 +184,7 @@ def execute(root,project):
                 report[tag+'_nodes']={s:sum(r['status']==s for r in checks['results']) for s in ['success','pass']}
                 report[tag+'_comparison']=compare_snapshot(root)
         report['documentation']=artifacts(report['commands']['docs']['target'])
+        report['stage']='final comparison';save(root,report)
         report['final_comparison']=compare_snapshot(root)
         verify_inputs(root);verify_bundle(Path(info['baseline_path']))
         if sha256(Path(info['baseline_path'])/'result.json')!=info['baseline_sha256']:raise ValueError('original baseline changed')
