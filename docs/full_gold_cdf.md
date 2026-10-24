@@ -55,3 +55,5 @@ PYTHONPATH=src python scripts/drills/full_gold_cdf.py resume-tests \
 재사용 전에 전체 계산 DB의 입력을 고정 종료 Silver와 전수 대조한다. 실행된 SQL과 현재 사본의 SQL도 확인한다. dbt가 정리하는 바깥 공백과 Windows 줄바꿈 차이는 허용하며 SQL 내부의 로직 변경은 거부한다. `tests/test_full_cdf_recovery.py`는 완료 모델 추출, 오류 및 중복 로그, SQL 변경과 완료 상태 및 중복 복구 차단을 검사한다.
 
 복구 뒤 `elapsed_seconds`와 저장량 최대치는 복구 세션만 측정한다. 중단 전에 완료된 구간의 시간은 `seconds`에 유지하지만 전체 재계산의 연속 실행 시간은 복원하지 않는다. 이전 프로세스의 최대 임시 저장량도 알 수 없다. 이 수동 복구는 운영 자동 재시도나 모든 중단 지점을 포괄하는 복구 기능을 뜻하지 않는다.
+
+Windows에서는 실행 중 화면과 시스템의 활성 상태를 함께 요청하고 종료 시 해제한다. 전원 계획은 바꾸지 않는다. 요청 성공을 실제 비수면의 증거로 사용하지 않으며 전원 이벤트와 단계별 진행도 확인한다. 대기 구간이 있으면 총경과와 별도로 기록하고 순수 연산 시간으로 해석하지 않는다. 사용자 의도의 덮개 닫기나 전원 버튼 조작을 막는 기능은 아니다. [Windows 실행 상태 요청](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate)을 따른다.

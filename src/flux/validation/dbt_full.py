@@ -196,7 +196,7 @@ def awake(enabled):
     if os.name!='nt':return None
     import ctypes
 
-    return bool(ctypes.windll.kernel32.SetThreadExecutionState(0x80000001 if enabled else 0x80000000))
+    return bool(ctypes.windll.kernel32.SetThreadExecutionState(0x80000003 if enabled else 0x80000000))
 
 
 def run_full(baseline,output,project,reuse=None,resume_failed=False,memory_limit='8GB'):
