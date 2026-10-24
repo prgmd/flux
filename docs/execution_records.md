@@ -51,3 +51,5 @@ python scripts/inspect_execution.py data/executions/<실행-ID>.sqlite3 --events
 `tests/test_dbt_runtime.py`는 작은 고정 입력의 실제 dbt 생성과 14개 마트 대조에서 기록을 검증한다. 전체 운영 Silver 재계산은 이번 변경을 위해 반복하지 않는다. 독립 백업 복원, 기록 보존 정책, 전체 입력의 비용 개선과 실제 새 덤프 운영은 다음 단계다.
 
 2026-10-24 로컬 검증은 새 실행 기록 검사 19개가 1.70초, 기본 전체가 1,040 passed와 21 skipped 및 12 deselected로 119.25초였다. 실제 dbt 검사는 1개가 244.61초에 통과했다. 이 검사는 모델 24개 및 검사 145개를 두 차례 실행하고 14개 마트 대조와 오류 주입 17종을 확인한다. 기록에 고정 입력 버전 0, 단계 다섯 개의 완료와 청취 27회 및 14개 대조 완료가 남았다. 로컬에만 있는 기존 조사 초안이 있어 깨끗한 CI의 검사 수와는 구분한다.
+
+[원격 CI 실행](https://github.com/prgmd/flux/actions/runs/40072185690)에서도 기본 1,036 passed와 22 skipped 및 12 deselected가 19.64초에, 실제 dbt 7개가 325.56초에, GX 11개가 11.85초에 통과했다. 운영 데이터나 대규모 원본을 CI에 올리지 않았다.
