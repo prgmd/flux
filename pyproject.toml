@@ -33,4 +33,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "flux.silver" = ["name_matching_rules.json"]
-"flux.validation" = ["quality_rules.json"]
+"flux.validation" = ["quality_rules.json", "catalog.html"]
