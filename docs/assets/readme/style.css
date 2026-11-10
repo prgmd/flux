@@ -1,0 +1,53 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  position: relative;
+  overflow: hidden;
+  font-family: "Pretendard", "Noto Sans KR", sans-serif;
+  color: #e2e8f0;
+  word-break: keep-all;
+  background:
+    radial-gradient(900px 500px at 85% 10%, rgba(56, 189, 248, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 10% 100%, rgba(251, 191, 36, 0.08), transparent 60%),
+    linear-gradient(160deg, #0a1020 0%, #0f1a2e 100%);
+}
+.wires { position: absolute; left: 0; top: 0; }
+.step, .side, .card {
+  position: absolute;
+  background: #121d31;
+  border: 1px solid #22314d;
+  border-radius: 26px;
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
+}
+.step { width: 278px; height: 400px; padding: 30px 30px; }
+.side { width: 278px; min-height: 120px; padding: 24px 22px; display: flex; gap: 16px; align-items: center; }
+.card { padding: 26px 26px; }
+.no { font-size: 18px; font-weight: 700; color: #f59e0b; letter-spacing: 1px; }
+.ttl { font-size: 32px; font-weight: 800; color: #f8fafc; margin-top: 4px; letter-spacing: -0.5px; }
+.tile {
+  width: 96px; height: 96px; border-radius: 24px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 30px auto 30px;
+}
+.tile svg { width: 44px; height: 44px; }
+.tile.sm { width: 60px; height: 60px; border-radius: 16px; margin: 0; flex: none; }
+.tile.sm svg { width: 28px; height: 28px; }
+.lbl { font-size: 21px; font-weight: 700; color: #f1f5f9; }
+.desc { font-size: 16px; line-height: 1.5; color: #94a3b8; margin-top: 6px; }
+.pill {
+  display: inline-block; margin-top: 16px; padding: 6px 14px; border-radius: 999px;
+  font-size: 15px; font-weight: 700;
+}
+.tag {
+  position: absolute; padding: 5px 13px; border-radius: 999px;
+  background: #16233b; border: 1px solid #2b3d60; color: #cbd5e1;
+  font-size: 14px; font-weight: 600; white-space: nowrap;
+  transform: translateX(-50%);
+}
+.tag.hot { background: #b45309; border-color: #d97706; color: #fff7ed; }
+.gray { background: rgba(148, 163, 184, 0.14); color: #cbd5e1; }
+.sky { background: rgba(56, 189, 248, 0.15); color: #7dd3fc; }
+.cyan { background: rgba(34, 211, 238, 0.14); color: #67e8f9; }
+.teal { background: rgba(45, 212, 191, 0.14); color: #5eead4; }
+.amber { background: rgba(251, 191, 36, 0.15); color: #fcd34d; }
+.violet { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; }
+.red { background: rgba(248, 113, 113, 0.14); color: #fca5a5; }

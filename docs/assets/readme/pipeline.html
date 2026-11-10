@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+</head>
+<body style="width:1680px;height:720px">
+<svg class="wires" width="1680" height="720">
+  <defs>
+    <marker id="amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#f59e0b"/></marker>
+    <marker id="teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2dd4bf"/></marker>
+    <marker id="slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#64748b"/></marker>
+  </defs>
+  <line x1="318" y1="230" x2="366" y2="230" stroke="#f59e0b" stroke-width="4" marker-end="url(#amber)"/>
+  <line x1="650" y1="230" x2="698" y2="230" stroke="#f59e0b" stroke-width="4" marker-end="url(#amber)"/>
+  <line x1="982" y1="230" x2="1030" y2="230" stroke="#f59e0b" stroke-width="4" marker-end="url(#amber)"/>
+  <line x1="1314" y1="230" x2="1362" y2="230" stroke="#f59e0b" stroke-width="4" marker-end="url(#amber)"/>
+  <line x1="843" y1="440" x2="843" y2="532" stroke="#64748b" stroke-width="3" marker-end="url(#slate)"/>
+  <line x1="1175" y1="532" x2="1175" y2="448" stroke="#2dd4bf" stroke-width="3" stroke-dasharray="8 7" marker-end="url(#teal)"/>
+  <line x1="1507" y1="532" x2="1507" y2="448" stroke="#2dd4bf" stroke-width="3" stroke-dasharray="8 7" marker-end="url(#teal)"/>
+</svg>
+
+<div class="step" style="left:40px;top:40px">
+  <div class="no">01</div><div class="ttl">수집</div>
+  <div class="tile gray"><i data-lucide="download"></i></div>
+  <div class="lbl">ListenBrainz 덤프</div>
+  <div class="desc">공개 청취 덤프를 받아<br>체크섬으로 확인합니다</div>
+  <span class="pill gray">ingest</span>
+</div>
+<div class="step" style="left:372px;top:40px">
+  <div class="no">02</div><div class="ttl">Bronze</div>
+  <div class="tile sky"><i data-lucide="archive"></i></div>
+  <div class="lbl">원본 보존</div>
+  <div class="desc">원본 JSON과 적재 출처를<br>그대로 남깁니다</div>
+  <span class="pill sky">162,679,797행</span>
+</div>
+<div class="step" style="left:704px;top:40px">
+  <div class="no">03</div><div class="ttl">Silver</div>
+  <div class="tile cyan"><i data-lucide="filter"></i></div>
+  <div class="lbl">정제와 월별 압축</div>
+  <div class="desc">품질 격리, 중복 제거 뒤<br>사용자 + 곡 + 월 횟수로</div>
+  <span class="pill cyan">80,563,985행</span>
+</div>
+<div class="step" style="left:1036px;top:40px">
+  <div class="no">04</div><div class="ttl">Gold</div>
+  <div class="tile amber"><i data-lucide="layers"></i></div>
+  <div class="lbl">dbt + DuckDB 집계</div>
+  <div class="desc">월별과 연간을 계정 기준으로<br>각각 다시 계산합니다</div>
+  <span class="pill amber">모델 24개</span>
+</div>
+<div class="step" style="left:1368px;top:40px">
+  <div class="no">05</div><div class="ttl">분석 마트</div>
+  <div class="tile violet"><i data-lucide="chart-column"></i></div>
+  <div class="lbl">Parquet 14개</div>
+  <div class="desc">청취자 수 순위, 계정 편중,<br>귀속 커버리지</div>
+  <span class="pill violet">월별 7 + 연간 7</span>
+</div>
+
+<div class="side" style="left:704px;top:540px">
+  <div class="tile sm red"><i data-lucide="triangle-alert"></i></div>
+  <div><div class="lbl">격리 표</div><div class="desc">짧은 재생, 형식 오류를 사유와 함께</div></div>
+</div>
+<div class="side" style="left:1036px;top:540px">
+  <div class="tile sm teal"><i data-lucide="link"></i></div>
+  <div><div class="lbl">MusicBrainz</div><div class="desc">곡 연결 검수, 공식 크레딧</div></div>
+</div>
+<div class="side" style="left:1368px;top:540px">
+  <div class="tile sm teal"><i data-lucide="shield-check"></i></div>
+  <div><div class="lbl">품질 검사</div><div class="desc">품질 계약 17개 규칙, GX</div></div>
+</div>
+
+<span class="tag" style="left:843px;top:470px">격리</span>
+<span class="tag" style="left:1175px;top:470px">공식 귀속</span>
+<span class="tag" style="left:1507px;top:470px">통과분만</span>
+<script>lucide.createIcons({attrs:{'stroke-width':1.8}})</script>
+</body>
+</html>
