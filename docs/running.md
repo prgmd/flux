@@ -119,9 +119,24 @@ delta-spark를 다시 받는다.
 | `scripts/experiments/` | 6.5 표의 실험과 그 도구 | `experiment_skew.py`, `rederive_skew.py` |
 | `scripts/investigations/` | 무언가를 정하기 전에 한 번 재 본 조사. 다시 돌릴 일은 드물다 | `measure_fact_grain.py`, `inspect_mbid.py` |
 | `scripts/migrations/` | 이미 쌓인 표를 새 규칙으로 한 번 옮기는 이전. 운영 표는 읽기만 하고 다른 루트에 쓴다 | `rehash_record_id.py` |
-| `scripts/` | 실행 래퍼 | `spark_run.sh` |
+| `scripts/` | 현재 경로의 진입점(월별 Gold, dbt, CDF, 품질 검사, 실행 기록, 카탈로그)과 실행 래퍼 | `build_dbt_full.py`, `update_gold_from_cdf.py`, `spark_run.sh` |
 
-### 단계별
+### 현재 경로의 진입점
+
+지금의 기준 흐름은 월별 Silver, dbt Gold와 Silver CDF 증분이다. 아래 "이전 일별 모델의 단계별 실행"에 있는 `silver_build.py`, `gold_fact_listens.py`, `gold_mart.py` 같은 잡은 이전 일별 모델의 경로이며 월별 Silver를 입력으로 받지 않는다. 각 진입점의 인자와 확인 절차는 연결한 문서를 따른다.
+
+| 하려는 일 | 진입점 | 안내 |
+| --- | --- | --- |
+| 월별 Silver 첫 생성과 증분 | `scripts/migrations/compact_monthly_silver.py`, `scripts/pipeline/silver_monthly.py` | [월별 Silver 전용 경로](#월별-silver-전용-경로) |
+| 월별 및 연간 Gold 스냅샷 | `scripts/build_monthly_gold.py`, `scripts/finalize_monthly_gold.py`, `scripts/verify_monthly_gold.py` | [월별과 연간 Gold](monthly_gold.md) |
+| dbt Gold 표본과 전체 실행 | `scripts/build_dbt_pilot.py`, `scripts/build_dbt_full.py` | [dbt 표본](dbt_pilot.md), [dbt 전체](dbt_full.md) |
+| Silver CDF로 Gold 갱신 | `scripts/export_silver_cdf.py`, `scripts/update_gold_from_cdf.py`, `scripts/update_dbt_gold.py` | [CDF와 Gold 연결](silver_cdf_gold.md), [Gold 증분](gold_increment.md) |
+| 품질 검사 | `scripts/check_quality_contract.py`, `scripts/check_gx_quality.py` | [품질 계약](quality_contract.md), [GX](gx_quality.md) |
+| 실행 기록과 카탈로그 | `scripts/inspect_execution.py`, `scripts/build_data_catalog.py` | [실행 기록](execution_records.md), [데이터 카탈로그](data_catalog.md) |
+
+### 이전 일별 모델의 단계별 실행
+
+2026-10-19 월별 Silver 전환 전까지 기준이던 일별 모델 경로다. 운영 경로의 Bronze, Silver 상세와 일별 Gold를 만들고 갱신한다. S1과 S2가 만드는 덤프와 Bronze는 월별 Silver의 입력이기도 하지만, S3 이후의 잡은 현재 경로에 쓰지 않는다.
 
 ```bash
 # S1 덤프 수급
@@ -214,8 +229,8 @@ python -m venv .venv
 .venv/Scripts/python -m pytest
 ```
 
-554개가 3초 안에 돈다. `pytest.ini`의 `pythonpath = src`가 경로를 잡으므로
-설치도 필요 없다.
+검사 수와 시간은 기능이 늘며 바뀌므로 최신 수는 [현재 상태](status.md)의 CI 행을 따른다.
+`pytest.ini`의 `pythonpath = src`가 경로를 잡으므로 설치도 필요 없다.
 
 돌아가는 것은 pyspark를 부르지 않는 모듈이다 — 무엇이 바뀌면 새 버전인가,
 어느 줄을 남기는가, 이 레코드가 성한가. 판단은 Spark가 필요 없다.

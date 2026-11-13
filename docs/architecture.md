@@ -1,28 +1,28 @@
-# 현재 아키텍처
+# 2026-10-07 일별 모델 아키텍처
 
-> 2026-10-19 최신 주 출력은 사용자 이름+MSID+UTC 월별 Silver와 메타데이터 사전 및 격리 표다. 현재 검수 범위의 월별 및 연간 Gold는 DuckDB로 계산한 별도 Parquet 스냅샷이다. [최신 Gold 계약](monthly_gold.md)을 따른다. 아래 그림과 상세 흐름은 2026-10-07의 이전 모델이며, 최신 완료 범위와 다음 작업은 [현재 상태](status.md)를 따른다.
+> 이 문서의 그림과 상세 흐름은 2026-10-07 저장소 코드 기준의 이전 일별 모델이다. 지금의 흐름은 바로 아래 요약과 [README](../README.md)의 데이터 흐름, 진행 상태는 [현재 상태](status.md)를 따른다.
 
-2026-10-07 저장소 코드 기준. 실행 중인 서비스의 상태를 조사한 문서는 아니다.
-
-![현재 아키텍처](assets/architecture.png)
-
-## 최신 월별 경로
+## 현재 경로 요약
 
 ```mermaid
 flowchart LR
-    B[Bronze Delta] --> S[월별 Silver Delta]
-    M[MusicBrainz 공식 크레딧] --> R[곡 식별과 귀속 검수]
-    S --> R
-    S --> G[DuckDB 기간별 집계]
+    D[ListenBrainz 덤프] --> B[Bronze Delta]
+    B --> S[Silver 상세 Delta]
+    S --> M[월별 Silver Delta]
+    MB[MusicBrainz 공식 자료] --> R[곡 식별과 귀속 검수]
+    M --> R
+    M --> G[dbt와 DuckDB Gold 14개]
     R --> G
-    G --> P[월별 및 연간 Gold Parquet]
-    P --> V[조회용 DuckDB 뷰]
+    M -. CDF .-> G
+    G --> Q[품질 계약과 GX 검사]
+    Q --> P[검증된 Parquet 스냅샷]
 ```
 
-운영 원본은 보존하며 완료 manifest와 검수 결과가 있는 새 스냅샷을 읽는다. 미확정 귀속과 버전 분류는 결과의 상태 및 커버리지에 남긴다.
+Spark가 Bronze와 Silver 상세, 월별 Silver를 Delta 표로 만든다. Silver 상세에서는 30초 미만 재생을 격리하고 동일 청취를 지우며, 월별 Silver는 사용자 이름+MSID+UTC 청취 월의 `play_count`와 메타데이터 사전 및 격리 표로 구성한다. Gold는 dbt가 DuckDB에서 월별 7개와 연간 7개 마트로 계산해 Parquet 스냅샷으로 남긴다. Silver가 바뀌면 Delta CDF로 바뀐 행만 읽어 영향 받은 월과 그 해의 Gold만 다시 계산한다. 품질 계약과 GX 검사를 통과한 결과만 조회 대상으로 전환하며, 최신 결과는 아직 운영 경로로 승격하지 않았다([층별 데이터 위치](status.md#층별-데이터-위치)). 마트 정의는 [월별과 연간 Gold](monthly_gold.md), 증분 절차는 [Gold 증분](gold_increment.md)을 따른다.
 
-## 기존 상세 경로
+## 2026-10-07 일별 모델 경로
 
+![2026-10-07 일별 모델 아키텍처](assets/architecture.png)
 
 1. `src/flux/ingest/`에서 덤프 목록과 체크섬을 확인하고 다운로드와 이어받기를 처리한다.
 2. `src/flux/bronze/ingest.py`에서 청취 원본을 `raw_listens`에 보존한다.
@@ -47,7 +47,7 @@ flowchart LR
 
 ## 이미지 수정
 
-`assets/build_architecture.py`가 편집 가능한 원본이고 `assets/architecture.png`가 README에서 쓰는 결과물이다. Pillow가 설치된 Python에서 실행한다.
+`assets/build_architecture.py`가 편집 가능한 원본이고 `assets/architecture.png`가 이 문서의 일별 모델 그림이다. README는 이 그림을 쓰지 않고 `assets/readme/`의 HTML 원본으로 만든 `pipeline.png`와 `change-flow.png`를 쓴다. Pillow가 설치된 Python에서 실행한다.
 
 ```powershell
 python docs/assets/build_architecture.py
