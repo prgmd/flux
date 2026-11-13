@@ -57,7 +57,7 @@ Beyoncé의 Irreplaceable 후보에는 확인된 동일 녹음과 MBID 없는 �
 
 ```powershell
 $env:PYTHONPATH='src'
-venv/Scripts/python scripts/investigations/preview_name_sample.py --pool data/identity-samples-20261021/targeted-evidence.parquet --review data/identity-sample-review-20261021/result.json --prepared data/song-identifiers-20261021 --silver C:/Users/SSAFY/Desktop/jjh/flux-data/monthly-silver-20261019 --output <새표본결과경로>
+venv/Scripts/python scripts/investigations/preview_name_sample.py --pool data/identity-samples-20261021/targeted-evidence.parquet --review data/identity-sample-review-20261021/result.json --prepared data/song-identifiers-20261021 --silver <데이터 루트>/monthly-silver-20261019 --output <새표본결과경로>
 ```
 
 현재 출력은 `data/name-preprocessing-preview-20261021-final`이다. `before-after.md`는 42행 전체 전후 표, `rows.json`은 원문과 단계별 변경 및 승인/검수 후보, `result.json`은 입력 해시와 그룹별 참조 상태다. 전체 이름을 비교한 전수 실험과 전수 전처리 적용 여부는 이 표본을 검토한 다음 결정한다.

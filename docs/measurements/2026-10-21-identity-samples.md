@@ -43,7 +43,7 @@ NFC는 악센트를 지우지 않으므로 Beyonce와 Beyoncé의 차이를 없�
 
 ```powershell
 $env:PYTHONPATH='src'
-venv/Scripts/python scripts/investigations/review_identity_samples.py --prepared data/song-identifiers-20261021 --silver C:/Users/SSAFY/Desktop/jjh/flux-data/monthly-silver-20261019 --output <새표본경로>
+venv/Scripts/python scripts/investigations/review_identity_samples.py --prepared data/song-identifiers-20261021 --silver <데이터 루트>/monthly-silver-20261019 --output <새표본경로>
 ```
 
 `--prepared`는 앞선 준비 단계에서 저장한 공식 녹음과 ID 해석 표를 담은 로컬 DB다. 앞선 전수 비교는 준비 SQL 오류로 종료되어 결과가 없으며 이번에 재실행하지 않았다. 준비 DB의 전체 실험 완료 여부에 의존하지 않고, 이번 표본은 원래 공식 recording 행 및 아티스트 크레딧을 다시 확인했다. 현재 결과는 `data/identity-sample-review-20261021/result.json`이며 completed와 source_unchanged가 참이다. 원본과 조사 원자료는 git에 포함하지 않는다.

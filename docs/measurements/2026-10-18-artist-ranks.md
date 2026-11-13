@@ -59,8 +59,8 @@ RM의 최상위 계정은 325,048회, 나머지 421개 계정은 합계 233,568�
 
 ```bash
 venv/Scripts/python scripts/investigations/compare_artist_rankings.py \
-  --data-root C:/Users/SSAFY/Desktop/jjh/flux-data \
-  --output C:/Users/SSAFY/Desktop/jjh/flux-data/scratch/artist-ranks-20261018
+  --data-root <데이터 루트> \
+  --output <데이터 루트>/scratch/artist-ranks-20261018
 venv/Scripts/python -m pytest tests/test_artist_rank_comparison.py tests/test_queryrun.py -q
 ```
 

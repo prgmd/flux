@@ -73,7 +73,7 @@ MØ의 Meat on a Stick과 BØRNS의 10,000 Emerald Pools도 실제 대조 행으
 
 ```powershell
 $env:PYTHONPATH='src'
-venv/Scripts/python scripts/investigations/review_accent_expansion.py --prepared data/song-identifiers-20261021 --silver C:/Users/SSAFY/Desktop/jjh/flux-data/monthly-silver-20261019 --output <새표본출력경로>
+venv/Scripts/python scripts/investigations/review_accent_expansion.py --prepared data/song-identifiers-20261021 --silver <데이터 루트>/monthly-silver-20261019 --output <새표본출력경로>
 venv/Scripts/python -m pytest tests/test_accent_review.py tests/test_name_preprocessing_preview.py tests/test_identity_sample_review.py tests/test_name_character_catalog.py tests/test_artist_attribution.py tests/test_monthly_gold.py -q
 ```
 

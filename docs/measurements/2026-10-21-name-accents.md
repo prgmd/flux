@@ -54,7 +54,7 @@
 ```powershell
 $env:PYTHONPATH='src'
 venv/Scripts/python -m pytest tests/test_name_preprocessing_preview.py tests/test_identity_sample_review.py tests/test_name_character_catalog.py tests/test_artist_attribution.py tests/test_monthly_gold.py -q
-venv/Scripts/python scripts/investigations/preview_name_sample.py --pool data/identity-samples-20261021/targeted-evidence.parquet --review data/identity-sample-review-20261021/result.json --prepared data/song-identifiers-20261021 --silver C:/Users/SSAFY/Desktop/jjh/flux-data/monthly-silver-20261019 --baseline data/name-preprocessing-preview-20261021-final/rows.json --output <새출력경로>
+venv/Scripts/python scripts/investigations/preview_name_sample.py --pool data/identity-samples-20261021/targeted-evidence.parquet --review data/identity-sample-review-20261021/result.json --prepared data/song-identifiers-20261021 --silver <데이터 루트>/monthly-silver-20261019 --baseline data/name-preprocessing-preview-20261021-final/rows.json --output <새출력경로>
 ```
 
 최종 출력은 `data/name-preprocessing-accents-20261021-v2`다. before-after.md에 42행 전체 전후, rows.json에 원문과 단계별 변경, result.json의 baseline_comparison에 문자열 및 최종 후보 키 변화와 새로 같아진 쌍을 보관했다. v1 결과를 덮어쓰지 않았고 전수 적용은 계속 보류한다.
