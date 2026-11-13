@@ -72,7 +72,7 @@ MusicBrainz 덤프의 테이블 파일은 PostgreSQL COPY 형식이다. 탭으�
 
 ## `type`, `area`, `gender`는 숫자 외래 키다
 
-**명세가 놓친 부분이다.** 5.3의 `dim_artist`는 `country`와 `type`을 값으로
+**명세가 놓친 부분이다.** 설계의 `dim_artist`는 `country`와 `type`을 값으로
 갖는데, 원본에는 번호만 있다. 조회 테이블을 함께 실어야 한다.
 
 | 테이블 | 행 수 | 쓰임 |
@@ -125,7 +125,7 @@ area=1 → AF      area=2 → AL      area=3 → DZ
 artist  +  artist_type  +  area  +  iso_3166_1  ( + gender )
 ```
 
-명세 6절의 잡 목록에는 `load_musicbrainz` 하나로 적혀 있는데,
+초기 설계의 Spark 잡 목록에는 `load_musicbrainz` 하나로 적혀 있는데,
 **조회 표를 함께 싣는 것까지가 그 잡의 범위**다.
 
 규모는 부담되지 않는다. `artist` 297만 행이 가장 크고 나머지는 12만, 258, 6, 5행이다.

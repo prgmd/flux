@@ -82,7 +82,7 @@ spark.read.format("delta").option("versionAsOf", before_version).load(path)
 
 ## MERGE 도중 죽이기 — 게이트를 한 번 놓쳤다
 
-명세 7.4의 3번이다. 컨테이너를 병합 도중 `docker kill`로 끊고 차원이
+초기 설계의 검증 시나리오 중 "SCD2 병합 중 실패 주입" 항목이다. 컨테이너를 병합 도중 `docker kill`로 끊고 차원이
 온전한지 봤다.
 
 ### 두 문장짜리 MERGE는 통과하지 못했다

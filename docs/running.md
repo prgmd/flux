@@ -116,7 +116,7 @@ delta-spark를 다시 받는다.
 | `scripts/pipeline/` | 매번 도는 잡. 수집, 추출, Bronze, Silver, Gold | `silver_build.py`, `gold_mart.py` |
 | `scripts/checks/` | 만든 결과를 대조하는 확인 | `bronze_verify_raw.py`, `oracle_mart.py` |
 | `scripts/drills/` | 일부러 상황을 만들어 넣고 확인하는 점검. **운영 표는 읽기만 하고 임시 사본에서 한다** | `gold_rename_drill.py`, `silver_quarantine_drill.py` |
-| `scripts/experiments/` | 6.5 표의 실험과 그 도구 | `experiment_skew.py`, `rederive_skew.py` |
+| `scripts/experiments/` | Spark 성능 실험(스큐, 조인 전략, 파티션 수, Delta 배치)과 그 도구 | `experiment_skew.py`, `rederive_skew.py` |
 | `scripts/investigations/` | 무언가를 정하기 전에 한 번 재 본 조사. 다시 돌릴 일은 드물다 | `measure_fact_grain.py`, `inspect_mbid.py` |
 | `scripts/migrations/` | 이미 쌓인 표를 새 규칙으로 한 번 옮기는 이전. 운영 표는 읽기만 하고 다른 루트에 쓴다 | `rehash_record_id.py` |
 | `scripts/` | 현재 경로의 진입점(월별 Gold, dbt, CDF, 품질 검사, 실행 기록, 카탈로그)과 실행 래퍼 | `build_dbt_full.py`, `update_gold_from_cdf.py`, `spark_run.sh` |

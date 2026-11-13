@@ -1,6 +1,6 @@
 # MBID 우선순위 해석 규칙
 
-명세 6.3의 규칙을 실측(`measurements/2026-09-07-mbid-shape.md`)에 맞춰 고친 것이다.
+초기 설계의 Silver MBID 우선순위 규칙을 실측(`measurements/2026-09-07-mbid-shape.md`)에 맞춰 고친 것이다.
 
 ## 명세의 규칙
 
@@ -64,7 +64,7 @@ mbid_mapping.artist_mbids  →  additional_info.artist_mbids  →  lastfm_artist
 
 ## 클라이언트 식별
 
-명세 6.3의 2번은 `additional_info` 키 조합으로 제출 경로를 추론하라고 한다.
+초기 설계의 Silver 정제 규칙은 `additional_info` 키 조합으로 제출 경로를 추론하라고 한다.
 **추론하지 않는다.** `submission_client` 필드가 96.89%에 직접 들어 있다.
 
 ```
@@ -80,7 +80,7 @@ ELSE                                        → 'UNKNOWN'
 세 자리 모두 값이 UUID 형식인지 확인한다. 형식이 아니면 그 자리는 없는 것으로
 보고 다음 자리로 넘어간다.
 
-명세 6.3의 품질 규칙은 "MBID가 UUID 형식이 아니면 해당 필드만 NULL,
+초기 설계의 Silver 품질 규칙은 "MBID가 UUID 형식이 아니면 해당 필드만 NULL,
 레코드는 통과"라고 한다. 그 원칙을 우선순위 안으로 넣은 것이다.
 
 ## 예상 분포

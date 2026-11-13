@@ -1,6 +1,6 @@
 # broadcast 대 shuffle 조인 — 마트 이름 조인 (2026-10-02)
 
-명세 6.5의 "broadcast vs shuffle join" 줄이다. 측정 지표는 실행 시간과 실행기 메모리다.
+초기 설계의 반드시 실측할 항목 표 중 "broadcast vs shuffle join" 줄이다. 측정 지표는 실행 시간과 실행기 메모리다.
 
 ## 재는 작업
 

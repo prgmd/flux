@@ -1,6 +1,6 @@
 # 청취 시각 분포 실측 (2026-09-07)
 
-명세 5.3과 5.4는 Silver의 `listens_normalized`와 `fact_listens`를 `listened_date`로
+초기 설계의 데이터 모델은 Silver의 `listens_normalized`와 `fact_listens`를 `listened_date`로
 파티션하라고 한다. 그 전제가 실제 데이터와 맞는지 확인한 결과다.
 
 대상은 31일치 증분 덤프를 적재한 Bronze 155,713,649행이다.

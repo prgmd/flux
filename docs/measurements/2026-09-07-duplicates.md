@@ -1,6 +1,6 @@
 # 중복 제거 키 실측 (2026-09-07)
 
-명세 6.3의 중복 제거 키는 `user_name` + `listened_at` + `recording_msid`다.
+초기 설계가 정한 Silver 중복 제거 키는 `user_name` + `listened_at` + `recording_msid`다.
 코드로 옮기기 전에 그 키가 실제 데이터에서 어떻게 작동하는지 확인한 결과다.
 
 대상은 Bronze 155,713,649행 전수다.

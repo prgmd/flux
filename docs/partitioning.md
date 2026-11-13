@@ -2,7 +2,7 @@
 
 ## 문제
 
-명세 5.3과 5.4는 Silver를 `listened_date`로 파티션하라고 한다.
+초기 설계의 데이터 모델은 Silver를 `listened_date`로 파티션하라고 한다.
 실측(`measurements/2026-09-07-listened-at-distribution.md`)은 그 전제가
 데이터와 맞지 않는다는 것을 보여준다.
 
@@ -41,7 +41,7 @@
 
 > **2026-09-15에 `gold.fact_listens`만 정했다 — `listened_month`로 맞춘다.**
 >
-> 명세 5.3은 `listened_date`였지만, 팩트는 Silver와 **같은 `listened_at`**을 쓴다.
+> 초기 설계의 팩트 파티션은 `listened_date`였지만, 팩트는 Silver와 **같은 `listened_at`**을 쓴다.
 > 날짜가 7,877개로 흩어지는 문제가 그대로 온다. 펼치기로 행이 0.42% 늘 뿐
 > 시각 분포는 바뀌지 않으므로, 여기서 다시 잴 것이 없다.
 >
@@ -69,6 +69,6 @@ Silver가 생기면 이 셋을 재고, 결과가 다르면 이 문서를 고친�
 
 ## 명세와의 차이
 
-명세 5.3, 5.4의 `listened_date` 파티션 서술은 이 문서로 대체한다.
+초기 설계의 `listened_date` 파티션 서술은 이 문서로 대체한다.
 명세가 틀렸다기보다 쓸 당시 이 분포를 몰랐다.
 실측이 나오면 설계를 고치는 것이 순서다.

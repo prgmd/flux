@@ -1,6 +1,6 @@
 # Delta MERGE와 Parquet 전체 재작성 (2026-09-19)
 
-명세 6.5의 마지막 줄이고, **이 프로젝트가 Delta를 고른 근거 그 자체**다.
+초기 설계의 반드시 실측할 항목 표의 마지막 줄이고, **이 프로젝트가 Delta를 고른 근거 그 자체**다.
 
     Delta vs 순수 Parquet SCD2 병합 | MERGE INTO vs 파티션 재작성 소요 시간
 
