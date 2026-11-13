@@ -36,3 +36,6 @@ spark-warehouse/
 logs/
 airflow/logs/
 *.log
+
+# 글 윤문 도구가 실행 폴더에 만드는 작업 폴더
+_workspace/
