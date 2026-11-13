@@ -224,9 +224,9 @@ Spark 잡은 끝날 때 성공이든 실패든 `ops/job_runs`(Delta)에 한 줄�
 ### 판단 테스트 — 호스트에서, Spark 없이
 
 ```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements-dev.txt   # Linux: .venv/bin/python
-.venv/Scripts/python -m pytest
+python -m venv venv
+venv/Scripts/python -m pip install -r requirements-dev.txt   # Linux: venv/bin/python
+venv/Scripts/python -m pytest
 ```
 
 검사 수와 시간은 기능이 늘며 바뀌므로 최신 수는 [현재 상태](status.md)의 CI 행을 따른다.

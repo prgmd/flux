@@ -107,9 +107,9 @@ flux/
 원본 덤프와 생성 데이터는 저장소에 넣지 않습니다. 코드 검사는 데이터 없이 돌릴 수 있습니다. 저장소 루트에서 Python 3.14 기준으로 실행합니다.
 
 ```powershell
-python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements-dev.txt
-.venv/Scripts/python -m pytest -q
+python -m venv venv
+venv/Scripts/python -m pip install -r requirements-dev.txt
+venv/Scripts/python -m pytest -q
 ```
 
 기본 명령은 Spark, 클러스터, dbt, GX 검사를 제외합니다. dbt와 GX는 Python 3.11 전용 환경으로 분리했습니다.

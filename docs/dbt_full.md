@@ -34,6 +34,8 @@ dbt 작업은 한 번에 하나씩 실행하며 DuckDB 계산 스레드는 2개,
 
 ## 재현
 
+먼저 두 선행 자료를 만든다. `data/dbt-runtime`은 Python 3.11 dbt 분리 환경으로 [dbt 표본 실행의 분리 환경과 재현](dbt_pilot.md#분리-환경과-재현)에서 만든다. `data/governance-baseline-20261022-r2`는 고정 입력과 비교 기준으로 [P0 입력 고정의 저장과 재현](measurements/2026-10-22-governance-baseline.md#저장과-재현)에서 `scripts/prepare_governance_baseline.py`로 만들고 `scripts/verify_governance_baseline.py`로 확인한다. 새로 만들 때는 아래 명령의 두 경로를 자신이 만든 경로로 바꾼다.
+
 Git Bash에서 기존 분리 환경으로 새 출력 경로를 사용한다. 실패 결과는 completed=false로 보존한다.
 
 ```bash
