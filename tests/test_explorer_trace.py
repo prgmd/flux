@@ -1,16 +1,25 @@
 """청취 한 줄 따라가기의 조회. 작은 메모리 표로 같은 코드를 돌린다."""
 
 import json
-from pathlib import Path
 
 import pytest
 
 duckdb = pytest.importorskip("duckdb", reason="DuckDB가 없는 환경이다")
 
+from flux.common import config
 from flux.explorer import trace
 
 TS = 1700000000
-SAMPLE = Path("C:/Users/SSAFY/Desktop/jjh/flux-data/explorer/sample.duckdb")
+
+
+def sample_path():
+    try:
+        return config.local_root() / "explorer" / "sample.duckdb"
+    except config.StorageConfigError:
+        return None
+
+
+SAMPLE = sample_path()
 
 
 def doc(msid="m1", artist="가수", track="곡", client="navidrome", mapping=None, lastfm=None):
@@ -164,7 +173,7 @@ def test_Silver에_없는_청취는_거부한다(con):
         trace.trace(con, "alice", TS, "nope")
 
 
-@pytest.mark.skipif(not SAMPLE.exists(), reason="표본 파일이 없다")
+@pytest.mark.skipif(SAMPLE is None or not SAMPLE.exists(), reason="FLUX_STORAGE_ROOT 아래 표본 파일이 없다")
 def test_실제_표본의_청취를_전부_따라갈_수_있다():
     real = duckdb.connect(str(SAMPLE), read_only=True)
     real.execute("SET TimeZone='UTC'")
