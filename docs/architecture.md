@@ -14,11 +14,11 @@ flowchart LR
     M --> G[dbt와 DuckDB Gold 14개]
     R --> G
     M -. CDF .-> G
-    G --> Q[품질 계약과 GX 검사]
+    G --> Q[품질 검사와 전체 또는 영향 기간 대조]
     Q --> P[검증된 Parquet 스냅샷]
 ```
 
-Spark가 Bronze와 Silver 상세, 월별 Silver를 Delta 표로 만든다. Silver 상세에서는 30초 미만 재생을 격리하고 동일 청취를 지우며, 월별 Silver는 사용자 이름+MSID+UTC 청취 월의 `play_count`와 메타데이터 사전 및 격리 표로 구성한다. Gold는 dbt가 DuckDB에서 월별 7개와 연간 7개 마트로 계산해 Parquet 스냅샷으로 남긴다. Silver가 바뀌면 Delta CDF로 바뀐 행만 읽어 영향 받은 월과 그 해의 Gold만 다시 계산한다. 품질 계약과 GX 검사를 통과한 결과만 조회 대상으로 전환하며, 최신 결과는 아직 운영 경로로 승격하지 않았다([층별 데이터 위치](status.md#층별-데이터-위치)). 마트 정의는 [월별과 연간 Gold](monthly_gold.md), 증분 절차는 [Gold 증분](gold_increment.md)을 따른다.
+Spark가 Bronze와 Silver를 Delta 표로 만든다. 월별 Silver는 30초 미만 재생 격리와 동일 청취 제거를 거쳐 사용자 이름, MSID, UTC 청취 월별 `play_count`와 메타데이터 사전 및 격리 표를 만든다. Gold는 dbt와 DuckDB로 월별 7개와 연간 7개 마트를 계산한다. 11월 릴리스의 Silver는 Bronze CDF를 읽어 갱신했고, Gold는 공식 크레딧 재검수 뒤 전체 재계산했다. 고정 사전을 사용한 Gold 영향 기간 교체 검증과 11월 운영 조회 전환의 범위는 [현재 상태](status.md#층별-데이터-위치)에 기록했다.
 
 ## 2026-10-07 일별 모델 경로
 

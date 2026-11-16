@@ -136,7 +136,7 @@ delta-spark를 다시 받는다.
 
 ### 이전 일별 모델의 단계별 실행
 
-2026-10-19 월별 Silver 전환 전까지 기준이던 일별 모델 경로다. 운영 경로의 Bronze, Silver 상세와 일별 Gold를 만들고 갱신한다. S1과 S2가 만드는 덤프와 Bronze는 월별 Silver의 입력이기도 하지만, S3 이후의 잡은 현재 경로에 쓰지 않는다.
+2026-10-19 월별 Silver 전환 전까지 기준이던 일별 모델 경로다. 이 명령은 데이터 루트의 이전 Bronze, 상세 Silver와 일별 Gold를 대상으로 한다. 활성 릴리스의 조회 대상은 뒤의 [운영 릴리스 조회와 전환](#운영-릴리스-조회와-전환)에 나온 절차를 따른다.
 
 ```bash
 # S1 덤프 수급
@@ -196,6 +196,19 @@ venv/Scripts/python scripts/investigations/query.py -e "select count(*) from {si
 ```
 
 SQL 안에서 `{bronze}`, `{silver}`, `{fact}`, `{dim_artist}`, `{mart_daily}` 같은 이름이 해당 Delta 폴더로 바뀐다. 쓰는 질의는 거부한다. `raw_json`을 건드리는 질의는 30초 안팎이 걸린다.
+
+### 운영 릴리스 조회와 전환
+
+`scripts/investigations/query.py`는 질의 시작 시 `<데이터 루트>/ops/current_release.json`을 한 번 읽는다. 활성 릴리스의 `{bronze}`, `{monthly_user_recordings}`, `{recording_metadata}`, `{monthly_invalid}`는 Delta 표다. `{monthly_coverage}`, `{yearly_song_metrics}` 등 월별과 연간 마트는 같은 릴리스의 Parquet를 읽는다. 기존 상세 `{silver}`와 일별 팩트는 예전 입력의 역사 자료다. 예전 모델과 함께 Bronze를 비교하려면 `{legacy_bronze}` 또는 `--legacy`를 사용한다.
+
+```bash
+python scripts/investigations/query.py -e "select sum(period_listens) from {monthly_coverage}"
+python scripts/publish_release.py --root <데이터-루트> status
+python scripts/publish_release.py --root <데이터-루트> publish 2026-11-16
+python scripts/publish_release.py --root <데이터-루트> rollback 2026-11-16
+```
+
+새 작업은 별도 경로에서 만들고, Delta 로그 및 데이터와 Gold Parquet, 대조 자료를 `releases/<릴리스>/`에 모아 해시가 담긴 `release.json`을 확정한다. 전환 명령은 파일 해시와 Silver 및 14개 Gold 대조를 검사한 뒤 단일 포인터를 원자적으로 교체한다. 현재 릴리스 이름을 인자로 받는 되돌리기는 이전 조회 대상으로 돌아간다. 기존 일별 표와 새 릴리스는 이 작업으로 이동하거나 삭제되지 않는다. 기존 일별 잡은 그대로 해당 자료를 사용하며 이후 수집과 월별 갱신은 별도 릴리스 생성 절차로 진행한다.
 
 ### 탐색 화면(나만 보는 로컬 화면)
 

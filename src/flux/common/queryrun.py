@@ -7,13 +7,14 @@ SQL 안의 `{silver}` 같은 이름을 Delta 폴더 읽기 식으로 바꾸고, 
 import re
 
 from flux.bronze import schema as bronze_schema
-from flux.common import config
+from flux.common import active_release, config
 from flux.gold import fact, mart, scd2
 from flux.silver import schema as silver_schema
 
 TABLES = {
     "bronze": (config.BRONZE, bronze_schema.TABLE_NAME),
     "bronze_invalid": (config.BRONZE, bronze_schema.QUARANTINE_TABLE_NAME),
+    "legacy_bronze": (config.BRONZE, bronze_schema.TABLE_NAME),
     "silver": (config.SILVER, silver_schema.TABLE_NAME),
     "silver_invalid": (config.SILVER, silver_schema.QUARANTINE_TABLE_NAME),
     "user_recording_counts": (config.SILVER, "user_recording_counts"),
@@ -25,17 +26,25 @@ TABLES = {
 
 ALLOWED_FIRST_WORDS = frozenset({"SELECT", "WITH", "FROM", "DESCRIBE", "SHOW", "EXPLAIN", "SUMMARIZE"})
 
-_PLACEHOLDER = re.compile(r"\{(" + "|".join(TABLES) + r")\}")
+_PLACEHOLDER = re.compile(r"\{(" + "|".join(sorted(TABLES.keys() | active_release.ASSETS.keys())) + r")\}")
 _LINE_COMMENT = re.compile(r"--[^\n]*")
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 
 
-def expand(sql, root):
+def expand(sql, root, *, release=None):
     base = str(root).replace("\\", "/").rstrip("/")
 
     def table(match):
-        layer, name = TABLES[match.group(1)]
-        return f"delta_scan('{base}/{layer}/{name}')"
+        alias = match.group(1)
+        if release is not None and alias in active_release.ASSETS:
+            scan, relative = active_release.ASSETS[alias]
+            path = (release / relative).as_posix()
+        elif alias in TABLES:
+            layer, name = TABLES[alias]
+            scan, path = "delta_scan", f"{base}/{layer}/{name}"
+        else:
+            raise ValueError(f"no active release for {{{alias}}}")
+        return scan + "('" + path.replace("'", "''") + "')"
 
     return _PLACEHOLDER.sub(table, sql)
 
