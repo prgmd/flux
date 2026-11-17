@@ -47,7 +47,7 @@ venv/Scripts/python scripts/build_monthly_gold.py --silver <월별Silver> --audi
 
 공식 조사본의 Silver 로그 지문이 현재 입력과 일치해야 실행한다. 출력은 기존 폴더를 덮어쓰지 않는 새 경로다. 월별과 연간 각각 일곱 Parquet 마트, 식별 사전 세 개와 완료 manifest를 만든다. 생성 중 DuckDB는 계산용 사본이며, 최종화 단계에서 별도 경로에 읽기용 스냅샷을 만든다. 이번 Gold는 DuckDB 배치로 생성한 불변 Parquet 스냅샷이며 Delta 증분 마트는 아니다. Silver는 Delta로 유지한다. 계산용 DuckDB의 요약 테이블은 마지막 생성한 연간 결과다. 최종화된 조회용 gold.duckdb는 month_song_metrics, year_song_metrics처럼 기간 접두사가 있는 뷰로 양쪽 결과를 제공하며 데이터를 DB에 다시 복제하지 않는다.
 
-`result.json`의 completed가 true이고 입력 지문 불변 검증이 끝난 경우에만 완성본으로 사용한다. 중간 실패 폴더를 완료로 사용하지 않는다. 다음 Silver 버전 또는 연결 규칙 변경 시 새 출력 경로에서 재생성하고 검증한 뒤 조회 대상을 바꾼다. 운영 승격과 Gold 증분 갱신은 별도 작업이다.
+`result.json`의 completed가 true이고 입력 지문 검증이 끝난 결과를 후보로 사용한다. 11월에는 공식 크레딧을 다시 확인해 14개 마트를 전체 재계산하고, 기준 계산과 dbt가 일치한 결과를 운영 조회로 전환했다. 활성 마트는 질의 도구에서 `{monthly_coverage}`, `{yearly_song_metrics}`처럼 조회한다. [11월 검증](measurements/2026-11-16-local-release.md), [운영 조회 절차](running.md#운영-릴리스-조회와-전환)
 
 테스트는 반복 월의 동일 계정, 같은 곡의 여러 MSID, 다중 참여자와 중복 크레딧, 공동 순위, 집중도 공식, 버전 분리, 누락 식별 보존과 오래된 조사본 차단을 확인한다. 전체 데이터에서는 청취 합계, 내보낸 행 수, 입력 지문 불변과 실제 표본의 독립 재계산을 확인한다.
 

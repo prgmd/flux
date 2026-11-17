@@ -2,7 +2,7 @@
 
 ## 현재 P5 진행 상태
 
-영향 기간 계산에 이어 고정 사본에서 dbt 14개 마트의 실제 기간 교체를 검증했다. 재실행, 마지막 키 및 연도 삭제, 메타데이터와 정책 변경, SQL 실패와 실제 프로세스 종료 후 복구를 확인했다. 이후 [실제 Silver CDF 연결](silver_cdf_gold.md)도 소형 실험본에서 검증했다. 이후 [전체 Silver 통제 변경](measurements/2026-10-23-full-silver-cdf-gold.md)의 14개 전수 대조와 시간 및 저장량도 확인했다. 아래 사본 계산 규칙은 그 연결의 하위 구성 요소로 유지하며 새 덤프 전체와 대량 변경 및 운영 승격은 후속이다. 운영 원본과 Gold는 유지했다. [실측과 테스트](measurements/2026-10-23-dbt-period-increment.md)를 따른다.
+고정 사본에서 [dbt 기간 교체와 실패 복구](measurements/2026-10-23-dbt-period-increment.md)를 검증했다. [소형 실제 Silver CDF](silver_cdf_gold.md)와 [전체 Silver의 통제 변경 6행](measurements/2026-10-23-full-silver-cdf-gold.md)에서도 14개 마트를 전체 계산과 대조했다. 11월 실데이터는 Bronze CDF로 Silver를 갱신하고 크레딧을 재확인해 Gold를 전체 재계산한 뒤 로컬 조회로 전환했다. 실제 대량 입력에서의 Gold 기간 교체는 후속이다. [11월 실제 덤프와 운영 전환 실측](measurements/2026-11-16-local-release.md)
 
 ## 영향 범위
 
@@ -36,7 +36,7 @@
 
 ## 다음 단위
 
-실제 Silver CDF 범위의 읽기와 처리 위치 연결은 소형 사본에서 검증했다. [소형 실측](measurements/2026-10-23-silver-cdf-gold.md)의 복구 근거를 유지하고 [전체 규모 실행](full_gold_cdf.md)은 별도의 SQL 및 Delta 경로로 검증했다. 작은 Python 프로토타입의 행 수 제한은 유지한다. 이후 새 덤프 전체와 대량 CDF, 버전 고정 승인 매핑 입력 및 운영 복구를 확장한다.
+실제 Silver CDF 읽기와 처리 위치 연결은 [소형 실측](measurements/2026-10-23-silver-cdf-gold.md)과 [전체 규모의 통제 변경](full_gold_cdf.md)에 기록했다. 작은 Python 프로토타입의 행 수 제한은 유지한다. 이후 실제 대량 입력의 Gold 기간 교체, 버전 고정 승인 매핑과 반복 운영을 검증한다.
 
 
 ## dbt 기간 교체의 동작
