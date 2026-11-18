@@ -319,7 +319,7 @@ python scripts/migrations/verify_monthly_silver.py --verified-root <기존검증
 
 `migration.json`의 `completed`는 표 생성 완료다. `verification.json`의 `ok`가 참이고 `independent_validation_pending`이 거짓이어야 전수 대조까지 완료한 결과다. 생성은 같은 고정 입력에서 다시 실행하면 이미 커밋한 표를 건너뛴다.
 
-이후 증분용 진입점은 다음과 같다. 입력 Bronze에서 CDF를 새 덤프가 들어오기 전에 활성화하고 필요한 버전을 보존해야 한다. 현재 전환에 사용한 통합 Bronze v0에는 CDF가 없으며 이 도구는 원본 설정을 자동으로 바꾸지 않는다.
+이후 증분용 진입점은 다음과 같다. 입력 Bronze에서 CDF를 새 덤프가 들어오기 전에 활성화하고 필요한 버전을 보존해야 한다. 10월 통합 Bronze v0에는 CDF가 없었고 11월 운영 릴리스의 Bronze v12에는 CDF가 활성화돼 있다. 이 도구는 원본 설정을 자동으로 바꾸지 않는다. 입력과 출력에는 검증용 사본 경로를 명시하며 활성 조회 포인터가 개별 쓰기 명령의 경로를 자동으로 바꿔준다고 가정하지 않는다.
 
 ```bash
 python scripts/pipeline/silver_monthly.py --bronze <Bronze경로> --output <월별Silver경로>

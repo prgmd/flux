@@ -125,4 +125,4 @@ venv/Scripts/python -m pytest -q
 
 ListenBrainz 참여 계정의 기록이라 전체 음악 시장이나 팬덤 규모로 일반화하지 않습니다. 청취자 수는 고유 계정 수이고, 한 사람의 여러 계정은 구별하지 못합니다. MSID가 다른 동일 청취의 추가 중복 제거와 미확정 곡 연결, 아티스트 귀속은 후속 검수 대상입니다. 월별 Silver만으로 개별 청취 시각이나 정확한 일별, 주별 청취자 수는 복원할 수 없습니다.
 
-배치 수집과 CDF 기반 사본 갱신까지 검증했습니다. 실시간 수집, Airflow 전체 통합, PostgreSQL과 FastAPI 서빙, 새 덤프의 연속 운영은 다음 범위입니다. [현재 상태](docs/status.md), [확장 계획](docs/data_governance_plan.md)
+다음 보완은 수집 누락 방지, 단일 실행 및 복구 절차, 실제 새 덤프의 Gold 영향 기간 갱신 검증입니다. Airflow 통합은 현재 로컬 배치의 실행 빈도와 관리 비용을 고려해 보류했습니다. 정기 운영과 여러 실행의 관리가 필요해지면 재검토합니다. 새 덤프의 연속 운영 검증은 Airflow 없이도 진행할 수 있습니다. 실시간 수집, PostgreSQL과 FastAPI 서빙은 선택 확장입니다. [현재 상태](docs/status.md), [확장 계획](docs/data_governance_plan.md#airflow-통합-보류-결정과-재검토-조건)
